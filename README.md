@@ -1,8 +1,29 @@
 # ⚖️ LexFixer — Corretor de Petições Automáticas
 
-Plataforma **local** (roda no navegador, sem chave de API) para a equipe revisar e corrigir,
-de forma **rápida e assistida**, as petições iniciais geradas automaticamente — aplicando o
-checklist dos **12 pontos**, as correções de conteúdo e o padrão de formatação do escritório.
+Plataforma para a equipe revisar e corrigir, de forma **rápida e assistida**, as petições iniciais
+geradas automaticamente — aplicando o checklist dos **12 pontos**, as correções de conteúdo e o
+padrão de formatação do escritório.
+
+## 🌐 Versão web (GitHub Pages) — recomendada
+
+O `index.html` é uma **plataforma 100% no navegador**: nada é instalado, não há servidor nem chave
+de API, e **nenhum arquivo sai do computador** (todo o processamento é local, no browser).
+
+**Publicar no GitHub Pages:** no repositório, vá em **Settings → Pages → Source: “Deploy from a
+branch” → Branch: `main` / `/root` → Save**. Em ~1 minuto o site fica disponível em
+`https://cmaluhg.github.io/lexfixer/`.
+
+**Usar:** abrir o site → **selecionar a pasta do cliente** → conferir os dados e o RG → informar
+**sexo** e **data de nascimento** → **gerar peça corrigida** e baixar o `.docx` + o relatório.
+Bibliotecas (JSZip, SheetJS, pdf.js) são carregadas por CDN.
+
+> Requer navegador baseado em Chromium (Chrome/Edge) para selecionar a pasta.
+
+---
+
+## 💻 Versão local (Python/Streamlit) — alternativa
+
+Mesma lógica, rodando localmente. Útil para lotes (CLI) ou uso offline sem depender de CDN.
 
 > Fluxo **assistido**: a ferramenta confere tudo, sinaliza e já aplica as correções seguras;
 > a equipe confirma os pontos de julgamento (idade/idoso, endereçamento em rubrica dúbia) e

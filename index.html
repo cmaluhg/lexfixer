@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LexFixer — Corretor de Petições</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header>
+  <span class="logo">⚖️</span>
+  <div><h1>LexFixer</h1><div class="tag">Corretor de petições automáticas — roda no seu navegador, sem servidor e sem chave de API.</div></div>
+</header>
+
+<main>
+  <div class="card">
+    <h2><span class="step">1</span>Selecione a pasta do cliente</h2>
+    <div class="filepick">
+      <input type="file" id="folder" webkitdirectory directory multiple>
+      <p class="hint">Selecione a pasta com a petição (.docx), a tabela (.xlsx), o extrato (.pdf), o kit de documentos (.pdf) e o socioeconômico (.docx).</p>
+    </div>
+    <div id="arquivos" class="kv" style="margin-top:12px"></div>
+  </div>
+
+  <div id="painel" class="hidden">
+    <div class="card">
+      <h2><span class="step">2</span>Dados extraídos e identidade</h2>
+      <div class="grid">
+        <div>
+          <div id="dados" class="kv"></div>
+        </div>
+        <div class="rg">
+          <label>Documento de identidade (confira e informe abaixo)</label>
+          <div id="rg"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">3</span>Confirme (olhando o RG)</h2>
+      <div class="row">
+        <div><label>Sexo</label>
+          <label style="display:inline"><input type="radio" name="sexo" value="F" checked> Feminino</label>
+          <label style="display:inline;margin-left:10px"><input type="radio" name="sexo" value="M"> Masculino</label>
+        </div>
+        <div><label>Data de nascimento (dd/mm/aaaa)</label><input type="text" id="nasc" placeholder="16/05/1961"></div>
+        <div><label>Nº da residência (se faltar)</label><input type="text" id="numero" placeholder="52"></div>
+        <div><button id="btnGerar" class="gold">✅ Conferir e gerar peça corrigida</button></div>
+      </div>
+      <p class="hint" style="margin-top:8px">A data de nascimento define os itens de idoso (60+). Nada é protocolado sem revisão humana.</p>
+    </div>
+
+    <div id="resultado" class="hidden">
+      <div class="card">
+        <h2><span class="step">4</span>Resultado</h2>
+        <div id="metrics" class="metrics"></div>
+        <div id="downloads"></div>
+        <div id="warnIdoso"></div>
+        <h3 style="color:var(--navy);font-size:15px">Conferência dos 12 pontos</h3>
+        <table id="tabela"><thead><tr><th>#</th><th>Ponto</th><th>Status</th><th>Observação</th></tr></thead><tbody></tbody></table>
+        <h3 style="color:var(--navy);font-size:15px;margin-top:16px">Correções aplicadas</h3>
+        <ul id="log" class="log"></ul>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>LexFixer · roda 100% no navegador · consulte o Manual do escritório para as regras completas.</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>
+  if (window['pdfjsLib']) window['pdfjsLib'].GlobalWorkerOptions.workerSrc =
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+</script>
+<script src="js/engine.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
