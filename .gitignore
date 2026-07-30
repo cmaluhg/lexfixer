@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Saídas / temporários
+*.pdf
+*~$*
+*- CORRIGIDA.docx
+RELATORIO.md
+exemplos/*
+!exemplos/.gitkeep
+
+# SO / editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
