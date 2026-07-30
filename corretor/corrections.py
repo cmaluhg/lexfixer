@@ -161,7 +161,9 @@ def socioeconomico(xml, pasta, log):
     # não existe: insere após o fim da seção de gratuidade
     novo = estrutura._para(estrutura.PPR_BODY, estrutura.RPR, texto)
     for anc in ["rendimento da parte autora", "rendimento da parte Autora",
-                "extrato de renda dos últimos 3"]:
+                "extrato de renda dos últimos 3", "todos em anexo aos autos",
+                "hipossuficiência econômica da parte",
+                "declaração de hipossuficiência e extratos bancários"]:
         xml2, ok = estrutura._inserir_apos(xml, anc, novo)
         if ok:
             log.append("Socioeconômico inserido na seção de Gratuidade")

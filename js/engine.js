@@ -314,7 +314,9 @@
       log.push("Socioeconômico individualizado/neutralizado");
       return xml.slice(0, r.ini) + novoP + xml.slice(r.fim);
     }
-    for (const anc of ["rendimento da parte autora", "rendimento da parte Autora", "extrato de renda dos últimos 3"]) {
+    for (const anc of ["rendimento da parte autora", "rendimento da parte Autora",
+      "extrato de renda dos últimos 3", "todos em anexo aos autos",
+      "hipossuficiência econômica da parte", "declaração de hipossuficiência e extratos bancários"]) {
       const [x2, ok] = inserirApos(xml, anc, para(PPR_BODY, RPR, texto)); if (ok) { log.push("Socioeconômico inserido"); return x2; }
     }
     return xml;
