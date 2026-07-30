@@ -1,4 +1,4 @@
-# ⚖️ Corretor de Petições Automáticas
+# ⚖️ LexFixer — Corretor de Petições Automáticas
 
 Plataforma **local** (roda no navegador, sem chave de API) para a equipe revisar e corrigir,
 de forma **rápida e assistida**, as petições iniciais geradas automaticamente — aplicando o

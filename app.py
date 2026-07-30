@@ -12,10 +12,10 @@ import streamlit as st
 
 from corretor import pipeline, docxio
 
-st.set_page_config(page_title="Corretor de Petições", page_icon="⚖️", layout="wide")
+st.set_page_config(page_title="LexFixer", page_icon="⚖️", layout="wide")
 
-st.title("⚖️ Corretor de Petições Automáticas")
-st.caption("Revisão assistida dos 12 pontos + correções e formatação. Roda local, sem chave de API.")
+st.title("⚖️ LexFixer")
+st.caption("Corretor de petições automáticas — revisão assistida dos 12 pontos, correções e formatação. Roda local, sem chave de API.")
 
 if "arqs" not in st.session_state:
     st.session_state.arqs = None
