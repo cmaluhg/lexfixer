@@ -19,3 +19,12 @@ Thumbs.db
 .vscode/
 .idea/
 _test/
+
+# Segredos (o projeto NÃO usa hoje; deixado como prevenção)
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets.*
+credentials.*
