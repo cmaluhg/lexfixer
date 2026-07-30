@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="LexFixer">
+  <title>LexFixer</title>
+  <!-- Badge azul-marinho (identidade Grupo Lex) -->
+  <rect x="16" y="16" width="480" height="480" rx="120" fill="#0E2038"/>
+  <rect x="16" y="16" width="480" height="480" rx="120" fill="none" stroke="#F26A1B" stroke-width="10" opacity="0.9"/>
+  <!-- Coluna/base (tradição jurídica) -->
+  <rect x="150" y="330" width="212" height="20" rx="10" fill="#F26A1B"/>
+  <!-- Circuito: nós + trilha (tecnologia/automação) -->
+  <circle cx="150" cy="292" r="16" fill="none" stroke="#F26A1B" stroke-width="14"/>
+  <path d="M166 292 H210" fill="none" stroke="#F26A1B" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="150" cy="230" r="10" fill="#F26A1B"/>
+  <path d="M150 240 V270" fill="none" stroke="#F26A1B" stroke-width="12" stroke-linecap="round"/>
+  <!-- Check + seta (correção validada / melhoria) -->
+  <path d="M198 262 L246 312 L360 176" fill="none" stroke="#F26A1B" stroke-width="34"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M360 176 L328 176 M360 176 L360 208" fill="none" stroke="#F26A1B" stroke-width="20"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
