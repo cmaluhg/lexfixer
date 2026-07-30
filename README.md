@@ -16,16 +16,20 @@ checklist dos **12 pontos**, as correções de conteúdo e o padrão de formata�
 2. **Extrai** e mostra: qualificação, agência/conta, rubrica, valores, período, valor da causa, etc.
 3. **Mostra a imagem do RG/CIN** para a equipe informar **data de nascimento** e **sexo**.
 4. **Confere os 12 pontos** e gera um relatório (✅ OK / ⚠️ atenção / 🔧 corrigir).
-5. **Aplica correções automáticas seguras:**
-   - gênero na qualificação (BRASILEIRO/A, SOLTEIRO/A, CASADO/A…);
-   - número da residência;
-   - dano moral por extenso (`R$ 15.000,00 (quinze mil reais)`);
-   - remoção do marcador `[PRIORIDADE]` quando **não** idoso;
-   - neutralização da linguagem (*a parte autora / a parte requerente*);
-   - formatação: **espaçamento 1,15**, **tabelas centralizadas e inteiras numa página**,
-     **títulos nunca separados** do texto.
-6. **Idoso (60+):** entrega os **itens de prioridade prontos** (cabeçalho, tópico e pedido) para revisão/inserção.
+5. **Aplica as correções automaticamente** (reproduzindo a correção manual):
+   - **endereçamento** (Juizado × Vara Comum) pela regra do valor + exceção de rubrica;
+   - **cabeçalho**: inclui Gratuidade/Inversão que faltarem;
+   - **gênero** na qualificação (BRASILEIRO/A, SOLTEIRO/A, CASADO/A…) + **número da residência**;
+   - **socioeconômico**: usa o `socio economico.docx`, individualiza, neutraliza e insere/substitui;
+   - **valores por extenso** (dano moral, total, dobro, valor da causa) — verifica e corrige;
+   - **neutralização** da linguagem (*a parte autora / a parte requerente*);
+   - **renumeração** dos pedidos quando há letra faltando;
+   - **formatação**: espaçamento 1,15, tabelas centralizadas e inteiras numa página, títulos nunca separados.
+6. **Idoso (60+):** insere **automaticamente** o pedido no cabeçalho, o tópico da prioridade
+   (após a Inversão do Ônus) e o pedido de prioridade (após juros/correção). Não idoso: remove o marcador `[PRIORIDADE]`.
 7. **Baixa** a peça corrigida (`.docx`) e o relatório (`.md`).
+
+> Validado contra os 7 casos reais já corrigidos manualmente (Lucia, André, Leonardo, Manoel, Deyvid, Rocimildo, Irlane) — a saída reproduz as correções.
 
 ---
 

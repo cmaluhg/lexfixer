@@ -27,10 +27,13 @@ def montar(cliente, pet, plan, chk, acoes, snippets=None):
         L.append("- (nenhuma)")
     L.append("")
     if snippets:
-        L.append("## ⚠️ Itens de idoso — revisar e inserir\n")
+        L.append("## Itens de idoso — inseridos automaticamente (conferir)\n")
+        L.append("Foram incluídos na peça: o pedido no cabeçalho, o tópico da prioridade "
+                 "(após a Inversão do Ônus) e o pedido de prioridade (após juros/correção). "
+                 "Textos inseridos, para conferência:\n")
         L.append("**Cabeçalho:** " + snippets["cabecalho"] + "\n")
-        L.append("**Tópico (após a Inversão do Ônus):** " + snippets["topico"] + "\n")
-        L.append("**Pedido (após juros/correção):** " + snippets["pedido"] + "\n")
+        L.append("**Tópico:** " + snippets["topico"] + "\n")
+        L.append("**Pedido:** " + snippets["pedido"] + "\n")
     L.append("---")
     L.append("_Conferir sempre a identidade pela imagem. Nada deve ser protocolado sem revisão humana dos pontos em ⚠️/🔧._")
     return "\n".join(L)

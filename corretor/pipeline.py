@@ -53,8 +53,26 @@ def processar(arqs, op, destino_docx):
     except KeyError:
         styles = None
 
+    # endereçamento alvo: exceção→Vara Comum; senão pelo valor da causa
+    if chk["tem_excecao"] or op.get("forcar_vara_comum"):
+        alvo_vara = True
+    elif pet.get("valor_causa") is not None:
+        alvo_vara = pet["valor_causa"] > checks.TETO_JUIZADO
+    else:
+        alvo_vara = None
+
+    ctx = {
+        "sexo": op.get("sexo"),
+        "numero_endereco": op.get("numero_endereco"),
+        "idoso": idoso,
+        "nascimento": op.get("nascimento"),
+        "idade": chk["idade"],
+        "pasta": op.get("pasta") or os.path.dirname(arqs["peticao"]),
+        "alvo_vara_comum": alvo_vara,
+        "valores": [plan.get("total"), plan.get("dobro"), pet.get("valor_causa"), 15000.0],
+    }
     acoes = []
-    xml = corrections.aplicar(xml, op.get("sexo"), op.get("numero_endereco"), idoso, acoes)
+    xml = corrections.aplicar(xml, ctx, acoes)
     xml, styles = formatting.aplicar_tudo(xml, styles)
     acoes.append("Formatação: espaçamento 1,15; tabelas centralizadas e inteiras; títulos não separados")
 
