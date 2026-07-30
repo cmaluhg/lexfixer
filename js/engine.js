@@ -262,9 +262,11 @@
   }
   function inserirNumero(xml, numero, log) {
     if (!numero) return xml;
-    if (xml.indexOf(", Nº " + numero) >= 0) return xml;
+    const sn = /^s\/?n$/i.test(numero);
+    const label = sn ? "S/N" : "Nº " + numero;
+    if (xml.indexOf(", " + label) >= 0) return xml;
     for (const a of [", Bairro:", ",Bairro:"]) {
-      if (xml.indexOf(a) >= 0) { xml = xml.replace(a, ", Nº " + numero + a); log.push("Endereço: incluído Nº " + numero); break; }
+      if (xml.indexOf(a) >= 0) { xml = xml.replace(a, ", " + label + a); log.push("Endereço: incluído " + label); break; }
     }
     return xml;
   }

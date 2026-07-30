@@ -17,7 +17,11 @@
     const docs = arr.find(f => low(f).endsWith(".pdf") && (low(f).indexOf("pessoa") >= 0 || low(f).indexOf("pessoais") >= 0))
       || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("doc") >= 0 && f !== extrato);
     const socio = arr.find(f => isDocx(f) && low(f).indexOf("ocio") >= 0);
-    return { peticao, xlsx, extrato, docs, socio };
+    // documentos que podem conter o endereço com número (comprovante/declaração/procuração)
+    const residencia = arr.filter(f => low(f).endsWith(".pdf") && f !== extrato &&
+      (/proc|jus|residenc|comprovante|declara|pessoa/.test(low(f))));
+    if (docs && residencia.indexOf(docs) < 0) residencia.unshift(docs);
+    return { peticao, xlsx, extrato, docs, socio, residencia };
   }
 
   async function lerDocxPartes(file) {
@@ -202,28 +206,51 @@
     return full;
   }
 
-  function aplicarDeteccao(r, origem) {
-    let msg = [];
-    if (r.dob) { $("#nasc").value = r.dob; msg.push("nascimento <b>" + r.dob + "</b>"); }
-    if (r.sexo) { const el = document.querySelector('input[name=sexo][value="' + r.sexo + '"]'); if (el) el.checked = true; msg.push("sexo <b>" + (r.sexo === "F" ? "Feminino" : "Masculino") + "</b>"); }
-    if (msg.length) det("✅ Detectado do documento (" + origem + "): " + msg.join(" · ") + ". Confira e ajuste se necessário.");
-    else det("⚠️ Não consegui ler o nascimento no documento — preencha manualmente olhando o RG.");
+  function deburr(s) { return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " "); }
+
+  function detectarNumero(logradouro, texto) {
+    if (!logradouro) return null;
+    const L = deburr(logradouro), T = deburr(texto);
+    const i = T.indexOf(L);
+    if (i < 0) return null;
+    const depois = T.slice(i + L.length, i + L.length + 30);
+    const m = depois.match(/^[ ,]*(?:N[O.º°]?\.?\s*)?(\d{1,5}|S\/?N)\b/);
+    return m ? (/^S\/?N$/.test(m[1]) ? "S/N" : m[1]) : null;
+  }
+
+  async function detectarNumeroResidencia(arqs) {
+    const logr = state.peticao && state.peticao.data ? state.peticao.data.endereco_logradouro : null;
+    if (!logr || !arqs.residencia || !arqs.residencia.length) return null;
+    for (const f of arqs.residencia) {
+      try {
+        const num = detectarNumero(logr, await lerPdfTexto(f));
+        if (num) return num;
+      } catch (e) { /* segue para o próximo */ }
+    }
+    return null;
   }
 
   async function autoDetectar(arqs) {
-    if (!arqs || !arqs.docs) { det("Kit de documentos não encontrado — preencha manualmente."); return; }
-    det("🔎 Lendo o documento…");
+    if (!arqs) { det("Carregue a pasta do cliente primeiro."); return; }
+    det("🔎 Lendo os documentos…");
+    const partes = [];
     try {
-      let txt = await lerPdfTexto(arqs.docs);
+      // número da residência (camada de texto do comprovante/declaração/procuração)
+      const num = await detectarNumeroResidencia(arqs);
+      if (num && !$("#numero").value) { $("#numero").value = num; partes.push("nº residência <b>" + num + "</b>"); }
+      // nascimento / sexo (texto e, se preciso, OCR do RG)
+      let txt = arqs.docs ? await lerPdfTexto(arqs.docs) : "";
       let r = parseIdentidade(txt);
-      if (!r.dob && typeof Tesseract !== "undefined") {
+      if (!r.dob && arqs.docs && typeof Tesseract !== "undefined") {
         det("🔎 Lendo a imagem do documento (OCR, ~10s)…");
         const otxt = await ocrPdf(arqs.docs, 2);
         r = parseIdentidade(txt + "\n" + otxt);
-        aplicarDeteccao(r, "OCR");
-      } else {
-        aplicarDeteccao(r, "texto");
       }
+      if (r.dob) { $("#nasc").value = r.dob; partes.push("nascimento <b>" + r.dob + "</b>"); }
+      if (r.sexo) { const el = document.querySelector('input[name=sexo][value="' + r.sexo + '"]'); if (el) el.checked = true; partes.push("sexo <b>" + (r.sexo === "F" ? "Feminino" : "Masculino") + "</b>"); }
+      det(partes.length
+        ? "✅ Detectado dos documentos: " + partes.join(" · ") + ". Confira e ajuste se necessário."
+        : "⚠️ Não consegui detectar automaticamente — preencha olhando os documentos.");
     } catch (e) { det("⚠️ Falha na leitura automática (" + e.message + ") — preencha manualmente."); }
   }
 
