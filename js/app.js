@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const $ = s => document.querySelector(s);
-  const state = { peticao: null, plan: null, extrato: null, socioTexto: "" };
+  const state = { peticao: null, plan: null, extrato: null, socioTexto: "", arqs: null };
 
   function low(f) { return (f.name || "").toLowerCase(); }
   function identificar(files) {
@@ -99,6 +99,9 @@
       try { const imgs = await renderPdfImgs(arqs.docs, 2); $("#rg").innerHTML = imgs.map(s => '<img src="' + s + '">').join(""); }
       catch (err) { $("#rg").innerHTML = "<span class='hint'>não consegui renderizar (" + err.message + ")</span>"; }
     } else $("#rg").innerHTML = "<span class='hint'>kit de documentos não encontrado</span>";
+
+    state.arqs = arqs;
+    autoDetectar(arqs);   // preenche nascimento/sexo a partir do documento
   });
 
   $("#btnGerar").addEventListener("click", async function () {
@@ -155,6 +158,76 @@
     $("#resultado").classList.remove("hidden");
     $("#resultado").scrollIntoView({ behavior: "smooth" });
   });
+
+  /* ---------- Máscara de data (evita "03/061992") ---------- */
+  $("#nasc").addEventListener("input", function (e) {
+    let v = e.target.value.replace(/\D/g, "").slice(0, 8);
+    if (v.length >= 5) v = v.slice(0, 2) + "/" + v.slice(2, 4) + "/" + v.slice(4);
+    else if (v.length >= 3) v = v.slice(0, 2) + "/" + v.slice(2);
+    e.target.value = v;
+  });
+
+  /* ---------- Detecção automática de nascimento/sexo ---------- */
+  function det(msg) { $("#detStatus").innerHTML = msg; }
+
+  function parseIdentidade(txt) {
+    const up = (txt || "").toUpperCase().replace(/\s+/g, " ");
+    let dob = null, sexo = null;
+    // data logo após "NASCIMENTO"
+    let m = up.match(/NASCIMENTO[^0-9]{0,25}(\d{2})[\/.\- ](\d{2})[\/.\- ](\d{4})/);
+    if (m) dob = m[1] + "/" + m[2] + "/" + m[3];
+    // MRZ da CIN (ex.: 6105169F...) -> AAMMDD + sexo
+    const mrz = up.match(/\b(\d{2})(\d{2})(\d{2})\d?([MF])[A-Z<0-9]{3,}/);
+    if (!dob && mrz) {
+      let aa = parseInt(mrz[1], 10); const ano = aa <= (new Date().getFullYear() % 100) ? 2000 + aa : 1900 + aa;
+      dob = mrz[3] + "/" + mrz[2] + "/" + ano; // AAMMDD -> dd/mm/aaaa
+    }
+    // sexo
+    let s = up.match(/SEX[O]?\s*\/?\s*SEX?\s*[:\-]?\s*([FM])\b/) || up.match(/\bSEXO\b[^A-Z]{0,6}([FM])\b/);
+    if (s) sexo = s[1]; else if (mrz) sexo = mrz[4];
+    return { dob, sexo };
+  }
+
+  async function ocrPdf(file, maxPaginas) {
+    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    let full = "";
+    for (let i = 1; i <= Math.min(maxPaginas, pdf.numPages); i++) {
+      const page = await pdf.getPage(i);
+      const vp = page.getViewport({ scale: 2.2 });
+      const cv = document.createElement("canvas"); cv.width = vp.width; cv.height = vp.height;
+      await page.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
+      const res = await Tesseract.recognize(cv, "por");
+      full += "\n" + res.data.text;
+    }
+    return full;
+  }
+
+  function aplicarDeteccao(r, origem) {
+    let msg = [];
+    if (r.dob) { $("#nasc").value = r.dob; msg.push("nascimento <b>" + r.dob + "</b>"); }
+    if (r.sexo) { const el = document.querySelector('input[name=sexo][value="' + r.sexo + '"]'); if (el) el.checked = true; msg.push("sexo <b>" + (r.sexo === "F" ? "Feminino" : "Masculino") + "</b>"); }
+    if (msg.length) det("✅ Detectado do documento (" + origem + "): " + msg.join(" · ") + ". Confira e ajuste se necessário.");
+    else det("⚠️ Não consegui ler o nascimento no documento — preencha manualmente olhando o RG.");
+  }
+
+  async function autoDetectar(arqs) {
+    if (!arqs || !arqs.docs) { det("Kit de documentos não encontrado — preencha manualmente."); return; }
+    det("🔎 Lendo o documento…");
+    try {
+      let txt = await lerPdfTexto(arqs.docs);
+      let r = parseIdentidade(txt);
+      if (!r.dob && typeof Tesseract !== "undefined") {
+        det("🔎 Lendo a imagem do documento (OCR, ~10s)…");
+        const otxt = await ocrPdf(arqs.docs, 2);
+        r = parseIdentidade(txt + "\n" + otxt);
+        aplicarDeteccao(r, "OCR");
+      } else {
+        aplicarDeteccao(r, "texto");
+      }
+    } catch (e) { det("⚠️ Falha na leitura automática (" + e.message + ") — preencha manualmente."); }
+  }
+
+  $("#btnDetectar").addEventListener("click", function () { if (state.arqs) autoDetectar(state.arqs); else det("Carregue a pasta do cliente primeiro."); });
 
   function metric(n, l) { return '<div class="metric"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>'; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }

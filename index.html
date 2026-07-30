@@ -37,17 +37,19 @@
     </div>
 
     <div class="card">
-      <h2><span class="step">3</span>Confirme (olhando o RG)</h2>
+      <h2><span class="step">3</span>Confirme (detectado do documento)</h2>
+      <p id="detStatus" class="hint" style="margin:-4px 0 12px">Detecção automática ainda não executada.</p>
       <div class="row">
         <div><label>Sexo</label>
           <label style="display:inline"><input type="radio" name="sexo" value="F" checked> Feminino</label>
           <label style="display:inline;margin-left:10px"><input type="radio" name="sexo" value="M"> Masculino</label>
         </div>
-        <div><label>Data de nascimento (dd/mm/aaaa)</label><input type="text" id="nasc" placeholder="16/05/1961"></div>
+        <div><label>Data de nascimento (dd/mm/aaaa)</label><input type="text" id="nasc" inputmode="numeric" maxlength="10" placeholder="16/05/1961"></div>
         <div><label>Nº da residência (se faltar)</label><input type="text" id="numero" placeholder="52"></div>
+        <div><button id="btnDetectar" class="btn btn-secondary" type="button">🔍 Reler do documento</button></div>
         <div><button id="btnGerar" class="gold">✅ Conferir e gerar peça corrigida</button></div>
       </div>
-      <p class="hint" style="margin-top:8px">A data de nascimento define os itens de idoso (60+). Nada é protocolado sem revisão humana.</p>
+      <p class="hint" style="margin-top:8px">Preenchido automaticamente a partir do documento; confira e ajuste se necessário. A idade define os itens de idoso (60+). Nada é protocolado sem revisão humana.</p>
     </div>
 
     <div id="resultado" class="hidden">
@@ -70,6 +72,7 @@
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
 <script>
   if (window['pdfjsLib']) window['pdfjsLib'].GlobalWorkerOptions.workerSrc =
     'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
