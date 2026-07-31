@@ -149,10 +149,10 @@
     }
     if (!p.endereco_tem_numero) $("#numero").value = "";
 
-    $("#rg").innerHTML = "renderizando…";
+    $("#rg").innerHTML = "renderizando o documento de identidade…";
     if (arqs.docs) {
-      try { const imgs = await renderPdfImgs(arqs.docs, 2); $("#rg").innerHTML = imgs.map(s => '<img src="' + s + '">').join(""); }
-      catch (err) { $("#rg").innerHTML = "<span class='hint'>não consegui renderizar (" + err.message + ")</span>"; }
+      try { const imgs = await renderPdfImgs(arqs.docs, 3); $("#rg").innerHTML = imgs.map(s => '<img src="' + s + '">').join(""); }
+      catch (err) { $("#rg").innerHTML = "<span class='hint'>não consegui renderizar a identidade (" + dicaArquivo(err) + ")</span>"; }
     } else $("#rg").innerHTML = "<span class='hint'>kit de documentos não encontrado</span>";
 
     state.arqs = arqs;
