@@ -9,19 +9,26 @@
     const arr = Array.from(files);
     const excl = ["backup", "original", "ajustada", "corrigida", "manual"];
     const isDocx = f => low(f).endsWith(".docx");
+    const pdf = pats => arr.find(f => low(f).endsWith(".pdf") && pats.some(p => low(f).indexOf(p) >= 0));
     const peticao = arr.find(f => isDocx(f) && (low(f).indexOf("peti") >= 0) && !excl.some(x => low(f).indexOf(x) >= 0))
       || arr.find(f => isDocx(f) && low(f).indexOf("ocio") < 0 && !excl.some(x => low(f).indexOf(x) >= 0));
     const xlsx = arr.find(f => low(f).endsWith(".xlsx"));
-    const extrato = arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("extrato") >= 0)
-      || arr.find(f => low(f).endsWith(".pdf") && /(^|[^a-z])06[^a-z]/.test(low(f)));
-    const docs = arr.find(f => low(f).endsWith(".pdf") && (low(f).indexOf("pessoa") >= 0 || low(f).indexOf("pessoais") >= 0))
-      || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("doc") >= 0 && f !== extrato);
+    const extrato = pdf(["extrato", "fatura"]) || pdf(["06"]);
+    const docs = pdf(["pessoa", "pessoais"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("04") >= 0);
+    const procuracao = pdf(["proc"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("02") >= 0);
+    const validacao = pdf(["valida"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("05") >= 0);
+    const jus = pdf(["jus", "hipossufi"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("03") >= 0);
     const socio = arr.find(f => isDocx(f) && low(f).indexOf("ocio") >= 0);
-    // documentos que podem conter o endereço com número (comprovante/declaração/procuração)
+    // documentos que podem conter o endereço com número
     const residencia = arr.filter(f => low(f).endsWith(".pdf") && f !== extrato &&
-      (/proc|jus|residenc|comprovante|declara|pessoa/.test(low(f))));
-    if (docs && residencia.indexOf(docs) < 0) residencia.unshift(docs);
-    return { peticao, xlsx, extrato, docs, socio, residencia };
+      (/proc|jus|residenc|comprovante|declara|pessoa|fatura/.test(low(f))));
+    [docs, procuracao].forEach(f => { if (f && residencia.indexOf(f) < 0) residencia.unshift(f); });
+    // kits obrigatórios (socioeconômico é o único opcional)
+    const OBRIG = [["Petição", peticao], ["Tabela de descontos", xlsx], ["Extrato/Faturas", extrato],
+      ["Documentos pessoais (RG)", docs], ["Procuração", procuracao], ["KIT Validação", validacao],
+      ["Declaração de hipossuficiência (JUS)", jus]];
+    const faltando = OBRIG.filter(k => !k[1]).map(k => k[0]);
+    return { peticao, xlsx, extrato, docs, procuracao, validacao, jus, socio, residencia, faltando };
   }
 
   async function lerDocxPartes(file) {
@@ -70,10 +77,20 @@
   $("#folder").addEventListener("change", async function (e) {
     const files = e.target.files; if (!files || !files.length) return;
     const arqs = identificar(files);
+    const ok = v => v ? "✅ " + v.name : "—";
     $("#arquivos").innerHTML =
-      "<b>Petição:</b> " + (arqs.peticao ? arqs.peticao.name : "— não encontrada —") + "<br>" +
-      "<b>Tabela:</b> " + (arqs.xlsx ? arqs.xlsx.name : "—") + " · <b>Extrato:</b> " + (arqs.extrato ? arqs.extrato.name : "—") + "<br>" +
-      "<b>Documentos:</b> " + (arqs.docs ? arqs.docs.name : "—") + " · <b>Socioeconômico:</b> " + (arqs.socio ? arqs.socio.name : "—");
+      "<b>Petição:</b> " + ok(arqs.peticao) + "<br>" +
+      "<b>Tabela:</b> " + ok(arqs.xlsx) + " · <b>Extrato/Faturas:</b> " + ok(arqs.extrato) + "<br>" +
+      "<b>Documentos (RG):</b> " + ok(arqs.docs) + " · <b>Procuração:</b> " + ok(arqs.procuracao) + "<br>" +
+      "<b>KIT Validação:</b> " + ok(arqs.validacao) + " · <b>JUS (hipossuficiência):</b> " + ok(arqs.jus) + "<br>" +
+      "<b>Socioeconômico:</b> " + (arqs.socio ? "✅ " + arqs.socio.name : "— (opcional)");
+    // AVISO de kit obrigatório faltando -> retornar ao documento de origem
+    if (arqs.faltando && arqs.faltando.length) {
+      $("#arquivos").innerHTML +=
+        '<div class="warn-box" style="background:#fdecea;border:1px solid #f5b7b1;color:#7b1a13;margin-top:12px">' +
+        '⚠️ <b>Documento obrigatório faltando:</b> ' + arqs.faltando.join(", ") +
+        '. <b>Retorne ao documento de origem (ORG DOC)</b> e anexe o(s) kit(s) antes de gerar a peça.</div>';
+    }
     if (!arqs.peticao) { alert("Não encontrei a petição (.docx) na pasta."); return; }
     $("#dados").innerHTML = "Lendo arquivos…";
     $("#painel").classList.remove("hidden");
@@ -175,33 +192,46 @@
   function det(msg) { $("#detStatus").innerHTML = msg; }
 
   function parseIdentidade(txt) {
-    const up = (txt || "").toUpperCase().replace(/\s+/g, " ");
-    let dob = null, sexo = null;
-    // data logo após "NASCIMENTO"
-    let m = up.match(/NASCIMENTO[^0-9]{0,25}(\d{2})[\/.\- ](\d{2})[\/.\- ](\d{4})/);
-    if (m) dob = m[1] + "/" + m[2] + "/" + m[3];
-    // MRZ da CIN (ex.: 6105169F...) -> AAMMDD + sexo
-    const mrz = up.match(/\b(\d{2})(\d{2})(\d{2})\d?([MF])[A-Z<0-9]{3,}/);
-    if (!dob && mrz) {
-      let aa = parseInt(mrz[1], 10); const ano = aa <= (new Date().getFullYear() % 100) ? 2000 + aa : 1900 + aa;
-      dob = mrz[3] + "/" + mrz[2] + "/" + ano; // AAMMDD -> dd/mm/aaaa
+    const up = deburr(txt);
+    const pad = n => (n < 10 ? "0" : "") + n;
+    function norm(d, m, a) {
+      d = +d; m = +m; a = +a;
+      if (a < 100) a += (a <= (new Date().getFullYear() % 100) ? 2000 : 1900);
+      return (m >= 1 && m <= 12 && d >= 1 && d <= 31 && a >= 1900 && a <= 2015) ? pad(d) + "/" + pad(m) + "/" + a : null;
     }
+    // todas as datas do texto (com ou sem separador — OCR às vezes some com a barra)
+    const datas = []; let re = /(\d{2})[\/.\- ]?(\d{2})[\/.\- ]?(\d{4})/g, mm;
+    while ((mm = re.exec(up))) { const v = norm(mm[1], mm[2], mm[3]); if (v) datas.push({ i: mm.index, v }); }
+    const idxNasc = []; (up.match(/NASC|BIRTH/g) || []); let r2 = /NASC|BIRTH/g, m2; while ((m2 = r2.exec(up))) idxNasc.push(m2.index);
+    const idxExp = []; let r3 = /EXPEDICAO|EMISSAO|VALIDADE|EXPIRY|ISSUE/g, m3; while ((m3 = r3.exec(up))) idxExp.push(m3.index);
+    const mrz = up.match(/\b(\d{2})(\d{2})(\d{2})\d?([MF])[A-Z<0-9]{3,}/);
+    let dob = null;
+    // 1) data mais próxima logo DEPOIS de um rótulo de nascimento
+    for (const n of idxNasc) { const c = datas.filter(d => d.i >= n && d.i - n < 45).sort((a, b) => a.i - b.i)[0]; if (c) { dob = c.v; break; } }
+    // 2) MRZ da CIN (AAMMDD + sexo)
+    if (!dob && mrz) dob = norm(mrz[3], mrz[2], mrz[1]);
+    // 3) fallback: uma data plausível que NÃO esteja colada em "expedição/validade"
+    if (!dob) { const c = datas.find(d => !idxExp.some(e => Math.abs(d.i - e) < 45)); if (c) dob = c.v; }
     // sexo
-    let s = up.match(/SEX[O]?\s*\/?\s*SEX?\s*[:\-]?\s*([FM])\b/) || up.match(/\bSEXO\b[^A-Z]{0,6}([FM])\b/);
-    if (s) sexo = s[1]; else if (mrz) sexo = mrz[4];
+    let s = up.match(/\bSEXO\b[^A-Z]{0,6}([FM])\b/) || up.match(/SEX[O]?\s*\/?\s*SEX?\s*[:\-]?\s*([FM])\b/);
+    const sexo = s ? s[1] : (mrz ? mrz[4] : null);
     return { dob, sexo };
   }
 
   async function ocrPdf(file, maxPaginas) {
     const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
     let full = "";
-    for (let i = 1; i <= Math.min(maxPaginas, pdf.numPages); i++) {
+    const n = Math.min(maxPaginas, pdf.numPages);
+    for (let i = 1; i <= n; i++) {
+      det("🔎 Lendo a imagem do documento (OCR " + i + "/" + n + ")…");
       const page = await pdf.getPage(i);
-      const vp = page.getViewport({ scale: 2.2 });
+      const vp = page.getViewport({ scale: 2.6 });
       const cv = document.createElement("canvas"); cv.width = vp.width; cv.height = vp.height;
       await page.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
       const res = await Tesseract.recognize(cv, "por");
       full += "\n" + res.data.text;
+      // se já achou nascimento, não precisa OCR das próximas páginas
+      if (parseIdentidade(full).dob) break;
     }
     return full;
   }
@@ -210,12 +240,19 @@
 
   function detectarNumero(logradouro, texto) {
     if (!logradouro) return null;
-    const L = deburr(logradouro), T = deburr(texto);
-    const i = T.indexOf(L);
-    if (i < 0) return null;
-    const depois = T.slice(i + L.length, i + L.length + 30);
-    const m = depois.match(/^[ ,]*(?:N[O.º°]?\.?\s*)?(\d{1,5}|S\/?N)\b/);
-    return m ? (/^S\/?N$/.test(m[1]) ? "S/N" : m[1]) : null;
+    const T = deburr(texto), L = deburr(logradouro);
+    const core = L.replace(/^(RUA|AVENIDA|AV|BECO|TRAVESSA|TV|ESTRADA|ROD|RODOVIA|CONJUNTO|CONJ|COMUNIDADE|CM|QUADRA|Q|ALAMEDA|AL)\s+/, "");
+    for (const alvo of [L, core]) {
+      if (!alvo || alvo.length < 4) continue;
+      let idx = T.indexOf(alvo);
+      while (idx >= 0) {
+        const depois = T.slice(idx + alvo.length, idx + alvo.length + 30);
+        const m = depois.match(/^[ ,]*(?:N[O.º°]?\.?\s*)?(\d{1,5}|S\/?N)\b/);
+        if (m) return /^S\/?N$/.test(m[1]) ? "S/N" : m[1];
+        idx = T.indexOf(alvo, idx + 1);
+      }
+    }
+    return null;
   }
 
   async function detectarNumeroResidencia(arqs) {
@@ -242,8 +279,7 @@
       let txt = arqs.docs ? await lerPdfTexto(arqs.docs) : "";
       let r = parseIdentidade(txt);
       if (!r.dob && arqs.docs && typeof Tesseract !== "undefined") {
-        det("🔎 Lendo a imagem do documento (OCR, ~10s)…");
-        const otxt = await ocrPdf(arqs.docs, 2);
+        const otxt = await ocrPdf(arqs.docs, 3);
         r = parseIdentidade(txt + "\n" + otxt);
       }
       if (r.dob) { $("#nasc").value = r.dob; partes.push("nascimento <b>" + r.dob + "</b>"); }
