@@ -29,7 +29,7 @@
     [docs, procuracao].forEach(f => { if (f && residencia.indexOf(f) < 0) residencia.unshift(f); });
     // kits obrigatórios (socioeconômico é o único opcional)
     const OBRIG = [["Petição", peticao], ["Tabela de descontos", xlsx], ["Extrato/Faturas", extrato],
-      ["Documentos pessoais (RG)", docs], ["Procuração", procuracao], ["KIT Validação", validacao],
+      ["Documentos pessoais (RG/CNH)", docs], ["Procuração", procuracao], ["KIT Validação", validacao],
       ["Declaração de hipossuficiência (JUS)", jus]];
     const faltando = OBRIG.filter(k => !k[1]).map(k => k[0]);
     return { peticao, xlsx, extrato, docs, procuracao, validacao, jus, socio, residencia, faltando };
@@ -94,7 +94,7 @@
     $("#arquivos").innerHTML =
       "<b>Petição:</b> " + ok(arqs.peticao) + "<br>" +
       "<b>Tabela:</b> " + ok(arqs.xlsx) + " · <b>Extrato/Faturas:</b> " + ok(arqs.extrato) + "<br>" +
-      "<b>Documentos (RG):</b> " + ok(arqs.docs) + " · <b>Procuração:</b> " + ok(arqs.procuracao) + "<br>" +
+      "<b>Documentos (RG/CNH):</b> " + ok(arqs.docs) + " · <b>Procuração:</b> " + ok(arqs.procuracao) + "<br>" +
       "<b>KIT Validação:</b> " + ok(arqs.validacao) + " · <b>JUS (hipossuficiência):</b> " + ok(arqs.jus) + "<br>" +
       "<b>Socioeconômico:</b> " + (arqs.socio ? "✅ " + arqs.socio.name : "— (opcional)");
     // AVISO de kit obrigatório faltando -> retornar ao documento de origem
