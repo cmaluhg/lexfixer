@@ -493,6 +493,7 @@
     t = tratamento(t);
     for (const w in CURADO) { const r = CURADO[w];
       t = t.replace(new RegExp("\\b" + esc(w) + "\\b", "gi"), m => /^[A-ZÀ-Ý]/.test(m) ? r.charAt(0).toUpperCase() + r.slice(1) : r); }
+    t = t.replace(/_{2,}/g, " ");   // traços/underscores de preenchimento (indício de IA)
     t = t.replace(/ {2,}/g, " ").replace(/ +([,;:.!?])/g, "$1").replace(/([!?])\1{1,}/g, "$1");
     if (t !== o) st.n++;
     return t;
@@ -530,7 +531,9 @@
   }
   function revisar(xml, log) {
     const st = { n: 0 };
+    const tracos = ((xml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || []).join("").match(/_{2,}/g) || []).length;
     xml = xml.replace(RE_TXT, (m, a, t, c) => a + corrigirTexto(t, st) + c);
+    if (tracos) log.push("Removido(s) " + tracos + " traço(s) de preenchimento (underscores — indício de IA)");
     if (st.n) log.push("Revisão ortográfica/tipográfica: " + st.n + " trecho(s) ajustado(s)");
     xml = italicoLatim(xml, log);
     avisosRevisao(xml, log);

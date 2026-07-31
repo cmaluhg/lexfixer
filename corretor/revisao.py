@@ -48,6 +48,8 @@ def _corrigir_texto(t, stats):
             s = m.group(0)
             return (r[:1].upper() + r[1:]) if s[:1].isupper() else r
         t = re.sub(r"\b" + re.escape(w) + r"\b", rep, t, flags=re.I)
+    # traços/underscores de preenchimento (linha "____" — indício de IA)
+    t = re.sub(r"_{2,}", " ", t)
     # tipografia
     t = re.sub(r" {2,}", " ", t)                 # espaços múltiplos
     t = re.sub(r" +([,;:.!?])", r"\1", t)         # espaço antes de pontuação
@@ -107,7 +109,10 @@ def _avisos(xml):
 def revisar(xml, log):
     """Aplica revisão ortográfica/tipográfica + itálico em latim; adiciona avisos ao log."""
     stats = [0]
+    tracos = len(re.findall(r"_{2,}", "".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", xml))))
     xml = _TXT.sub(lambda m: m.group(1) + _corrigir_texto(m.group(2), stats) + m.group(3), xml)
+    if tracos:
+        log.append("Removido(s) %d traço(s) de preenchimento (underscores — indício de IA)" % tracos)
     if stats[0]:
         log.append("Revisão ortográfica/tipográfica: %d trecho(s) ajustado(s)" % stats[0])
     xml = _italico_latim(xml, log)
