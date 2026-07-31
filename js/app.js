@@ -38,11 +38,13 @@
   // Lê os bytes com 1 retentativa — cobre OneDrive/rede que hidrata o arquivo
   // sob demanda (erro "could not be found at the time an operation was processed").
   async function lerBytes(file) {
-    try { return await file.arrayBuffer(); }
-    catch (e) {
-      await new Promise(r => setTimeout(r, 500));
-      return await file.arrayBuffer();  // 2ª tentativa; se falhar, propaga
+    const esperas = [700, 1600, 3000];  // dá tempo do OneDrive baixar arquivo grande
+    let ultimo;
+    for (let tent = 0; tent <= esperas.length; tent++) {
+      try { return await file.arrayBuffer(); }
+      catch (e) { ultimo = e; if (tent < esperas.length) await new Promise(r => setTimeout(r, esperas[tent])); }
     }
+    throw ultimo;
   }
   async function lerDocxPartes(file) {
     const zip = await JSZip.loadAsync(await lerBytes(file));
@@ -120,7 +122,15 @@
       state.peticao.nomeBase = arqs.peticao.name.replace(/\.docx$/i, "");
       state.peticao.data = LEX.extrairPeticao(LEX.mergeRuns(state.peticao.doc));
     } catch (err) {
-      $("#dados").innerHTML = "⚠️ Não consegui ler a <b>petição</b>: " + dicaArquivo(err);
+      const naoAchou = /not be found|NotFound|could not be read|permission/i.test((err && err.message) || String(err));
+      $("#dados").innerHTML = naoAchou
+        ? "⚠️ <b>Não consegui abrir a petição</b> — o arquivo mudou depois que a pasta foi selecionada (aberto no Word ou baixando no OneDrive). Repetir não resolve; faça assim:" +
+          "<ol style='margin:8px 0 0 18px;padding:0'>" +
+          "<li><b>Feche</b> a petição (e o socioeconômico) no Word/Office.</li>" +
+          "<li>Se a pasta estiver no <b>OneDrive</b>: botão direito na pasta → <b>“Sempre manter neste dispositivo”</b> e aguarde baixar (ícone verde ✓).</li>" +
+          "<li><b>Selecione a pasta novamente</b> no botão acima (só recarregar a página não basta).</li>" +
+          "</ol>"
+        : "⚠️ Não consegui ler a <b>petição</b>: " + esc((err && err.message) || String(err));
       return;
     }
     // demais kits: cada um isolado — uma falha não derruba o resto
