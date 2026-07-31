@@ -9,7 +9,7 @@ import glob
 import os
 import re
 from .extenso import valor_por_extenso
-from . import estrutura, docxio
+from . import estrutura, docxio, revisao
 
 
 def _t(xml, alvo, novo, log, label):
@@ -190,6 +190,7 @@ def aplicar(xml, ctx, log):
     xml = remover_marcador_prioridade(xml, log)
     xml = neutralizar_linguagem(xml, log)
     xml = estrutura.renumerar_pedidos(xml, log)
+    xml = revisao.revisar(xml, log)  # ortografia/tipografia + latim em itálico + avisos
     return xml
 
 

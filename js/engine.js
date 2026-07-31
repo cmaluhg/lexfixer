@@ -432,6 +432,71 @@
   function formatarTudo(doc, styles) { [doc, styles] = espac115(doc, styles); doc = centralizarTabelas(doc); doc = tabelasInteiras(doc); doc = titulosJuntos(doc); return [doc, styles]; }
   LEX.formatarTudo = formatarTudo;
 
+  /* ------------------------- revisão ortográfica/formatação ------------------------- */
+  const CURADO = { "excessão": "exceção", "excessões": "exceções", "excessao": "exceção",
+    "atravéz": "através", "atravez": "através", "concerteza": "com certeza",
+    "previlégio": "privilégio", "previlegio": "privilégio", "beneficiente": "beneficente",
+    "haja visto": "haja vista" };
+  const RE_TXT = /(<w:t[^>]*>)([^<]*)(<\/w:t>)/g;
+  const RE_RUN = /<w:r>(<w:rPr>[\s\S]*?<\/w:rPr>)?(<w:t[^>]*>)([^<]*)(<\/w:t>)<\/w:r>/g;
+  const RE_LATIM = /\b(fumus\s+bon[io]s?\s+[ij]uris|periculum\s+in\s+mora|inaudita\s+altera\s+parte|in\s+re\s+ipsa|ex\s+positis|ex\s+tunc|ex\s+nunc|data\s+(?:m[áa]xima\s+)?venia|mutatis\s+mutandis|ad\s+causam|erga\s+omnes)\b/gi;
+  const ITAL_RPR = '<w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:i/><w:iCs/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>';
+  function esc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+  function tratamento(t) {
+    return t.replace(/\bvossa excel[êe]ncia\b/gi, "Vossa Excelência")
+      .replace(/\bexcelent[íi]ssimo\b/gi, "Excelentíssimo")
+      .replace(/\bmerit[íi]ssimo\b/gi, "Meritíssimo")
+      .replace(/\bvossa senhoria\b/gi, "Vossa Senhoria");
+  }
+  function corrigirTexto(t, st) {
+    const o = t;
+    t = tratamento(t);
+    for (const w in CURADO) { const r = CURADO[w];
+      t = t.replace(new RegExp("\\b" + esc(w) + "\\b", "gi"), m => /^[A-ZÀ-Ý]/.test(m) ? r.charAt(0).toUpperCase() + r.slice(1) : r); }
+    t = t.replace(/ {2,}/g, " ").replace(/ +([,;:.!?])/g, "$1").replace(/([!?])\1{1,}/g, "$1");
+    if (t !== o) st.n++;
+    return t;
+  }
+  function italicoLatim(xml, log) {
+    const achados = new Set();
+    const novo = xml.replace(RE_RUN, function (m, rpr, topen, text, tclose) {
+      rpr = rpr || "";
+      if (rpr.indexOf("<w:i/>") >= 0) return m;
+      RE_LATIM.lastIndex = 0;
+      const ms = []; let mm; while ((mm = RE_LATIM.exec(text))) { ms.push([mm.index, mm.index + mm[0].length]); achados.add(mm[0].trim()); }
+      if (!ms.length) return m;
+      let out = "", last = 0;
+      for (const [s, e] of ms) {
+        if (s > last) out += '<w:r>' + rpr + '<w:t xml:space="preserve">' + text.slice(last, s) + '</w:t></w:r>';
+        out += '<w:r>' + ITAL_RPR + '<w:t xml:space="preserve">' + text.slice(s, e) + '</w:t></w:r>';
+        last = e;
+      }
+      if (last < text.length) out += '<w:r>' + rpr + '<w:t xml:space="preserve">' + text.slice(last) + '</w:t></w:r>';
+      return out;
+    });
+    if (achados.size) log.push("Itálico em latinismos: " + [...achados].sort().join(", "));
+    return novo;
+  }
+  function avisosRevisao(xml, log) {
+    let longos = 0;
+    (xml.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) || []).forEach(p => {
+      const t = (p.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || []).map(r => r.replace(/<w:t[^>]*>/, "").replace("</w:t>", "")).join("");
+      if (t.length > 1200) longos++;
+    });
+    if (longos) log.push("⚠️ " + longos + " parágrafo(s) muito longo(s) — considerar quebrar para leitura em tela (PJe).");
+    const texto = (xml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || []).join(" ").toLowerCase();
+    const reb = ["peça exordial", "esposar o entendimento", "compulsar os autos", "de per si"].filter(e => texto.indexOf(e) >= 0);
+    if (reb.length) log.push("⚠️ Expressão(ões) rebuscada(s) (sugestão, não alterado): " + reb.join(", "));
+  }
+  function revisar(xml, log) {
+    const st = { n: 0 };
+    xml = xml.replace(RE_TXT, (m, a, t, c) => a + corrigirTexto(t, st) + c);
+    if (st.n) log.push("Revisão ortográfica/tipográfica: " + st.n + " trecho(s) ajustado(s)");
+    xml = italicoLatim(xml, log);
+    avisosRevisao(xml, log);
+    return xml;
+  }
+
   /* ------------------------- orquestração ------------------------- */
   LEX.corrigir = function (docXml, stylesXml, ctx) {
     const log = [];
@@ -447,6 +512,7 @@
     xml = removerMarcador(xml, log);
     xml = neutralizarLinguagem(xml, log);
     xml = renumerarPedidos(xml, log);
+    xml = revisar(xml, log);   // ortografia/tipografia + latim em itálico + avisos
     let styles = stylesXml;
     [xml, styles] = formatarTudo(xml, styles);
     log.push("Formatação: 1,15; tabelas centralizadas e inteiras; títulos não separados");
