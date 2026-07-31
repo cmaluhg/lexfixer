@@ -184,29 +184,25 @@ def inserir_socio_texto(xml, texto, log, info=None):
     if not texto:
         info["via"] = "texto vazio"
         return xml
-    # 1) existe parágrafo socioeconômico template (começa com "Atualmente," E tem
-    #    marcadores de renda/provedor)? substitui o run — sem casar o "Atualmente,"
-    #    retórico ("Atualmente, no Brasil, instalou-se uma cultura...").
+    novo = estrutura._para(estrutura.PPR_BODY, estrutura.RPR, texto)
+    # REMOVE um parágrafo socioeconômico já existente (a peça costuma vir com ele no
+    # meio da seção) — será REPOSICIONADO no início da gratuidade. Sem casar o
+    # "Atualmente," retórico ("Atualmente, no Brasil, instalou-se uma cultura...").
+    pos_orig = None
     achou = _para_socio(xml)
     if achou:
-        ini, fim, ptag = achou
-        novo_p = re.sub(r'(<w:r\b.*</w:r>)',
-                        '<w:r>%s<w:t xml:space="preserve">%s</w:t></w:r>' % (estrutura.RPR, texto),
-                        ptag, count=1, flags=re.S)
-        xml = xml[:ini] + novo_p + xml[fim:]
-        log.append("Socioeconômico individualizado/neutralizado (parágrafo existente)")
-        info["ok"] = True
-        info["via"] = "substituição de parágrafo existente"
-        return xml
-    novo = estrutura._para(estrutura.PPR_BODY, estrutura.RPR, texto)
-    # 2) inicia a seção de gratuidade com o socio (logo após o título) — regra do cliente
+        ini, fim, _ptag = achou
+        pos_orig = ini
+        xml = xml[:ini] + xml[fim:]
+    # 1) INÍCIO da seção de gratuidade (logo após o título) — regra do cliente
     xml2, ok = _inserir_inicio_gratuidade(xml, novo)
     if ok:
-        log.append("Socioeconômico inserido no início da seção de Gratuidade")
+        log.append("Socioeconômico no início da seção de Gratuidade"
+                   + (" (reposicionado)" if pos_orig is not None else ""))
         info["ok"] = True
         info["via"] = "início da seção de Gratuidade (após o título)"
         return xml2
-    # 3) fallback: insere após uma âncora de conteúdo conhecida
+    # 2) fallback: insere após uma âncora de conteúdo conhecida
     for anc in ["rendimento da parte autora", "rendimento da parte Autora",
                 "extrato de renda dos últimos 3", "todos em anexo aos autos",
                 "hipossuficiência econômica da parte",
@@ -218,7 +214,14 @@ def inserir_socio_texto(xml, texto, log, info=None):
             info["ok"] = True
             info["via"] = "inserção na Gratuidade (âncora: %s)" % anc
             return xml2
-    # 3) não achou lugar seguro: NÃO altera e avisa
+    # 3) nada casou: se havia parágrafo, recoloca no lugar original (não perde texto)
+    if pos_orig is not None:
+        xml = xml[:pos_orig] + novo + xml[pos_orig:]
+        log.append("Socioeconômico individualizado/neutralizado (parágrafo existente)")
+        info["ok"] = True
+        info["via"] = "substituição no lugar original (título não encontrado)"
+        return xml
+    # 4) sem template e sem âncora: NÃO altera e avisa
     log.append("⚠️ Socioeconômico NÃO individualizado automaticamente — âncora da "
                "Gratuidade não encontrada. Inserir manualmente e retornar ao ORG DOC.")
     info["via"] = "nenhuma âncora encontrada"

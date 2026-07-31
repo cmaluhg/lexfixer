@@ -338,25 +338,29 @@
     const texto = limparSocio(socioTexto);
     info.pedido = true; info.ok = false;
     if (!texto) { info.via = "texto socioeconômico vazio após limpeza"; return neutralizarSocioExistente(xml, log); }
-    // 1) existe parágrafo socioeconômico template? substitui.
+    const novo = para(PPR_BODY, RPR, texto);
+    // REMOVE um parágrafo socioeconômico já existente (a peça costuma vir com ele no
+    // meio da seção) — será REPOSICIONADO no início da gratuidade.
+    let posOrig = null;
     const r = paraContendoPred(xml, ehParaSocio);
-    if (r) {
-      const novoP = r.tag.replace(/<w:r\b[\s\S]*<\/w:r>/, '<w:r>' + RPR + '<w:t xml:space="preserve">' + texto + '</w:t></w:r>');
-      log.push("Socioeconômico individualizado/neutralizado (parágrafo existente)");
-      info.ok = true; info.via = "substituição de parágrafo existente";
-      return xml.slice(0, r.ini) + novoP + xml.slice(r.fim);
-    }
-    // 2) inicia a seção de gratuidade com o socio (logo após o título) — regra do cliente.
-    const [xi, oki] = inserirInicioGratuidade(xml, para(PPR_BODY, RPR, texto));
-    if (oki) { log.push("Socioeconômico inserido no início da seção de Gratuidade"); info.ok = true; info.via = "início da seção de Gratuidade (após o título)"; return xi; }
-    // 3) fallback: insere após uma âncora de conteúdo conhecida.
+    if (r) { posOrig = r.ini; xml = xml.slice(0, r.ini) + xml.slice(r.fim); }
+    // 1) INÍCIO da seção de gratuidade (logo após o título) — regra do cliente.
+    const [xi, oki] = inserirInicioGratuidade(xml, novo);
+    if (oki) { log.push("Socioeconômico no início da seção de Gratuidade" + (posOrig != null ? " (reposicionado)" : "")); info.ok = true; info.via = "início da seção de Gratuidade (após o título)"; return xi; }
+    // 2) fallback: insere após uma âncora de conteúdo conhecida.
     for (const anc of ["rendimento da parte autora", "rendimento da parte Autora",
       "extrato de renda dos últimos 3", "todos em anexo aos autos",
       "hipossuficiência econômica da parte", "declaração de hipossuficiência e extratos bancários",
       "GRATUIDADE DE JUSTIÇA", "gratuidade de justiça"]) {
-      const [x2, ok] = inserirApos(xml, anc, para(PPR_BODY, RPR, texto)); if (ok) { log.push("Socioeconômico inserido na seção de Gratuidade"); info.ok = true; info.via = "inserção na Gratuidade (âncora: " + anc + ")"; return x2; }
+      const [x2, ok] = inserirApos(xml, anc, novo); if (ok) { log.push("Socioeconômico inserido na seção de Gratuidade"); info.ok = true; info.via = "inserção na Gratuidade (âncora: " + anc + ")"; return x2; }
     }
-    // 3) não achou lugar seguro: NÃO altera e avisa.
+    // 3) nada casou: se havia parágrafo, recoloca no lugar original (não perde texto).
+    if (posOrig != null) {
+      log.push("Socioeconômico individualizado/neutralizado (parágrafo existente)");
+      info.ok = true; info.via = "substituição no lugar original (título não encontrado)";
+      return xml.slice(0, posOrig) + novo + xml.slice(posOrig);
+    }
+    // 4) sem template e sem âncora: NÃO altera e avisa.
     log.push("⚠️ Socioeconômico NÃO individualizado automaticamente — âncora da Gratuidade não encontrada. Inserir manualmente e retornar ao ORG DOC.");
     info.via = "NENHUMA âncora encontrada";
     return xml;

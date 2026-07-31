@@ -79,17 +79,20 @@ def caso_sem_template_com_retorico():
 
 
 def caso_com_template():
-    """Peça padrão: há o parágrafo 'Atualmente, o(a) autor(a) é ...'."""
-    print("caso 2: com template socioeconômico")
-    xml = _doc(_p(RETORICO), _p(TEMPLATE), _p(GRATUIDADE))
+    """Lucia Maria: a peça já vem com o socio no MEIO da seção -> reposicionar no início."""
+    print("caso 2: template no meio da seção -> reposiciona no início (Lucia Maria)")
+    # ordem: retórico, TÍTULO, parágrafo de gratuidade, e o socio embutido no fim
+    xml = _doc(_p(RETORICO), _p(HDR), _p(GRATUIDADE), _p(TEMPLATE))
     log, info = [], {}
     out = corrections.inserir_socio_texto(xml, SOCIO, log, info)
     t = _texto(out)
     check(info.get("ok") is True, "info.ok == True")
-    check("substituição" in info.get("via", ""), "via = substituição de parágrafo existente")
+    check("início da seção" in info.get("via", ""), "via = início da seção (reposicionado)")
     check(RETORICO in t, "parágrafo retórico permanece intacto")
-    check("pedreiro" not in t, "template antigo foi substituído")
+    check("pedreiro" not in t, "template antigo (no meio) foi removido")
     check(t.count("analista") == 1, "socio aparece exatamente uma vez (sem duplicar)")
+    check(t.index("JUSTIÇA GRATUITA") < t.index("analista") < t.index("Requer"),
+          "socio abre a seção (após o título, antes do corpo)")
 
 
 def caso_sem_ancora():
