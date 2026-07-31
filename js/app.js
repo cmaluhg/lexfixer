@@ -6,7 +6,11 @@
 
   function low(f) { return (f.name || "").toLowerCase(); }
   function identificar(files) {
-    const arr = Array.from(files);
+    // ignora arquivos temporários de bloqueio do Word/Office (~$...) e ocultos
+    const arr = Array.from(files).filter(f => {
+      const n = f.name || "";
+      return !n.startsWith("~$") && !n.startsWith(".") && !/^~\$|\.tmp$/i.test(n);
+    });
     const excl = ["backup", "original", "ajustada", "corrigida", "manual"];
     const isDocx = f => low(f).endsWith(".docx");
     const pdf = pats => arr.find(f => low(f).endsWith(".pdf") && pats.some(p => low(f).indexOf(p) >= 0));
@@ -31,20 +35,29 @@
     return { peticao, xlsx, extrato, docs, procuracao, validacao, jus, socio, residencia, faltando };
   }
 
+  // Lê os bytes com 1 retentativa — cobre OneDrive/rede que hidrata o arquivo
+  // sob demanda (erro "could not be found at the time an operation was processed").
+  async function lerBytes(file) {
+    try { return await file.arrayBuffer(); }
+    catch (e) {
+      await new Promise(r => setTimeout(r, 500));
+      return await file.arrayBuffer();  // 2ª tentativa; se falhar, propaga
+    }
+  }
   async function lerDocxPartes(file) {
-    const zip = await JSZip.loadAsync(await file.arrayBuffer());
+    const zip = await JSZip.loadAsync(await lerBytes(file));
     const doc = await zip.file("word/document.xml").async("string");
     let styles = null;
     if (zip.file("word/styles.xml")) styles = await zip.file("word/styles.xml").async("string");
     return { zip, doc, styles };
   }
   async function lerDocxTexto(file) {
-    const zip = await JSZip.loadAsync(await file.arrayBuffer());
+    const zip = await JSZip.loadAsync(await lerBytes(file));
     const doc = await zip.file("word/document.xml").async("string");
     return LEX.paraTextos(doc).filter(t => t.trim()).join(" ");
   }
   async function lerXlsxLinhas(file) {
-    const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const wb = XLSX.read(await lerBytes(file), { type: "array" });
     let linhas = [];
     wb.SheetNames.forEach(n => {
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: "" });
@@ -53,7 +66,7 @@
     return linhas;
   }
   async function lerPdfTexto(file) {
-    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const pdf = await pdfjsLib.getDocument({ data: await lerBytes(file) }).promise;
     let t = "";
     for (let i = 1; i <= pdf.numPages; i++) {
       const c = await (await pdf.getPage(i)).getTextContent();
@@ -62,7 +75,7 @@
     return t;
   }
   async function renderPdfImgs(file, n) {
-    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const pdf = await pdfjsLib.getDocument({ data: await lerBytes(file) }).promise;
     const imgs = [];
     for (let i = 1; i <= Math.min(n, pdf.numPages); i++) {
       const page = await pdf.getPage(i);
@@ -94,14 +107,30 @@
     if (!arqs.peticao) { alert("Não encontrei a petição (.docx) na pasta."); return; }
     $("#dados").innerHTML = "Lendo arquivos…";
     $("#painel").classList.remove("hidden");
+    // dica quando o navegador perde a referência do arquivo (aberto no Word / drive de rede)
+    const dicaArquivo = e => {
+      const m = (e && e.message) || String(e);
+      return /not be found|NotFound|could not be read|permission/i.test(m)
+        ? m + " — feche o arquivo no Word/Office e recarregue a pasta (arquivo aberto ou em sincronização travam a leitura)."
+        : m;
+    };
+    // a petição é essencial: se falhar, para com instrução clara
     try {
       state.peticao = await lerDocxPartes(arqs.peticao);
       state.peticao.nomeBase = arqs.peticao.name.replace(/\.docx$/i, "");
       state.peticao.data = LEX.extrairPeticao(LEX.mergeRuns(state.peticao.doc));
-      state.plan = arqs.xlsx ? LEX.extrairPlanilha(await lerXlsxLinhas(arqs.xlsx)) : { rubricas: [] };
-      state.extrato = arqs.extrato ? LEX.extrairExtrato(await lerPdfTexto(arqs.extrato)) : {};
-      state.socioTexto = arqs.socio ? await lerDocxTexto(arqs.socio) : "";
-    } catch (err) { $("#dados").innerHTML = "Erro ao ler: " + err.message; return; }
+    } catch (err) {
+      $("#dados").innerHTML = "⚠️ Não consegui ler a <b>petição</b>: " + dicaArquivo(err);
+      return;
+    }
+    // demais kits: cada um isolado — uma falha não derruba o resto
+    const avisosLeitura = [];
+    try { state.plan = arqs.xlsx ? LEX.extrairPlanilha(await lerXlsxLinhas(arqs.xlsx)) : { rubricas: [] }; }
+    catch (err) { state.plan = { rubricas: [] }; avisosLeitura.push("tabela de descontos (" + dicaArquivo(err) + ")"); }
+    try { state.extrato = arqs.extrato ? LEX.extrairExtrato(await lerPdfTexto(arqs.extrato)) : {}; }
+    catch (err) { state.extrato = {}; avisosLeitura.push("extrato/faturas (" + dicaArquivo(err) + ")"); }
+    try { state.socioTexto = arqs.socio ? await lerDocxTexto(arqs.socio) : ""; }
+    catch (err) { state.socioTexto = ""; avisosLeitura.push("socioeconômico (" + dicaArquivo(err) + ")"); }
 
     const p = state.peticao.data, pl = state.plan, ex = state.extrato;
     $("#dados").innerHTML =
@@ -113,6 +142,11 @@
       "<b>Período:</b> " + p.periodo.filter(Boolean).join(" a ") + " · <b>Valor da causa:</b> R$ " + (p.valor_causa || "?") + "<br>" +
       "<b>Tabela:</b> total R$ " + pl.total + " · soma R$ " + pl.soma_conferida + " · dobro R$ " + pl.dobro + "<br>" +
       "<b>Rubricas:</b> " + (pl.rubricas || []).join("; ");
+    if (avisosLeitura.length) {
+      $("#dados").innerHTML +=
+        '<div class="warn-box" style="background:#fdecea;border:1px solid #f5b7b1;color:#7b1a13;margin-top:12px">' +
+        "⚠️ Não consegui ler: " + esc(avisosLeitura.join(" · ")) + "</div>";
+    }
     if (!p.endereco_tem_numero) $("#numero").value = "";
 
     $("#rg").innerHTML = "renderizando…";
@@ -252,7 +286,7 @@
     return cv;
   }
   async function ocrPdf(file, maxPaginas) {
-    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const pdf = await pdfjsLib.getDocument({ data: await lerBytes(file) }).promise;
     const worker = await getOcrWorker();
     let full = "";
     const n = Math.min(maxPaginas, pdf.numPages);
