@@ -8,8 +8,35 @@ são devolvidos como 'snippets' prontos para a equipe revisar/colar.
 import glob
 import os
 import re
+import unicodedata
 from .extenso import valor_por_extenso
 from . import estrutura, docxio, revisao
+
+
+def _deburr(s):
+    return "".join(c for c in unicodedata.normalize("NFD", s or "")
+                   if unicodedata.category(c) != "Mn").upper()
+
+
+# título da seção de gratuidade: começa com numeração ("2.2.") + DO/DA + termo.
+_HDR_NUM = re.compile(r"^\d+(\.\d+)*\.?\s+D[OA]\b")
+
+
+def _eh_hdr_gratuidade(t):
+    d = _deburr(t).strip()
+    if len(d) > 70 or not _HDR_NUM.match(d):
+        return False
+    return ("JUSTICA GRATUITA" in d or "GRATUIDADE" in d
+            or "ASSISTENCIA JUDICIARIA" in d)
+
+
+def _inserir_inicio_gratuidade(xml, novo_xml):
+    """Insere `novo_xml` logo APÓS o parágrafo-título da seção de gratuidade."""
+    for m in re.finditer(r"<w:p\b[^>]*>.*?</w:p>", xml, flags=re.S):
+        t = "".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", m.group(0))).strip()
+        if _eh_hdr_gratuidade(t):
+            return xml[:m.end()] + novo_xml + xml[m.end():], True
+    return xml, False
 
 
 def _t(xml, alvo, novo, log, label):
@@ -171,8 +198,15 @@ def inserir_socio_texto(xml, texto, log, info=None):
         info["ok"] = True
         info["via"] = "substituição de parágrafo existente"
         return xml
-    # 2) não existe: insere na seção de gratuidade (após uma âncora conhecida)
     novo = estrutura._para(estrutura.PPR_BODY, estrutura.RPR, texto)
+    # 2) inicia a seção de gratuidade com o socio (logo após o título) — regra do cliente
+    xml2, ok = _inserir_inicio_gratuidade(xml, novo)
+    if ok:
+        log.append("Socioeconômico inserido no início da seção de Gratuidade")
+        info["ok"] = True
+        info["via"] = "início da seção de Gratuidade (após o título)"
+        return xml2
+    # 3) fallback: insere após uma âncora de conteúdo conhecida
     for anc in ["rendimento da parte autora", "rendimento da parte Autora",
                 "extrato de renda dos últimos 3", "todos em anexo aos autos",
                 "hipossuficiência econômica da parte",

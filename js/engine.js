@@ -320,6 +320,18 @@
     }
     return null;
   }
+  function deburrUp(s) { return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase(); }
+  // título da seção de gratuidade: numeração ("2.2.") + DO/DA + termo.
+  function ehHdrGratuidade(t) {
+    const d = deburrUp(t).trim();
+    if (d.length > 70 || !/^\d+(\.\d+)*\.?\s+D[OA]\b/.test(d)) return false;
+    return d.indexOf("JUSTICA GRATUITA") >= 0 || d.indexOf("GRATUIDADE") >= 0 || d.indexOf("ASSISTENCIA JUDICIARIA") >= 0;
+  }
+  function inserirInicioGratuidade(xml, novo) {
+    const r = paraContendoPred(xml, ehHdrGratuidade);
+    if (!r) return [xml, false];
+    return [xml.slice(0, r.fim) + novo + xml.slice(r.fim), true];
+  }
   function socioeconomico(xml, socioTexto, log, info) {
     info = info || {};
     if (!socioTexto) { info.pedido = false; info.ok = true; info.via = "sem texto socioeconômico (opcional)"; return neutralizarSocioExistente(xml, log); }
@@ -334,7 +346,10 @@
       info.ok = true; info.via = "substituição de parágrafo existente";
       return xml.slice(0, r.ini) + novoP + xml.slice(r.fim);
     }
-    // 2) não existe: insere na seção de Gratuidade (após uma âncora conhecida).
+    // 2) inicia a seção de gratuidade com o socio (logo após o título) — regra do cliente.
+    const [xi, oki] = inserirInicioGratuidade(xml, para(PPR_BODY, RPR, texto));
+    if (oki) { log.push("Socioeconômico inserido no início da seção de Gratuidade"); info.ok = true; info.via = "início da seção de Gratuidade (após o título)"; return xi; }
+    // 3) fallback: insere após uma âncora de conteúdo conhecida.
     for (const anc of ["rendimento da parte autora", "rendimento da parte Autora",
       "extrato de renda dos últimos 3", "todos em anexo aos autos",
       "hipossuficiência econômica da parte", "declaração de hipossuficiência e extratos bancários",

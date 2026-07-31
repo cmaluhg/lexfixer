@@ -39,6 +39,11 @@ SOCIO = ("Atualmente, a parte autora é analista, sua residência é alugada e �
 RETORICO = ("Atualmente, no Brasil, instalou-se uma cultura por parte dos "
             "fornecedores onde descumprir direitos é mais rentável do que cumprir.")
 
+HDR = "2.2. DO PEDIDO DE JUSTIÇA GRATUITA"
+
+CUMPRE = ("Cumpre informar que a parte autora não possui condições de arcar "
+          "com as custas judiciais em razão de sua atual situação econômica.")
+
 GRATUIDADE = ("Requer a gratuidade, pela juntada de documentos que comprovam a "
               "hipossuficiência econômica da parte Autora (declaração de "
               "hipossuficiência e extratos bancários), todos em anexo aos autos.")
@@ -57,19 +62,20 @@ def check(cond, nome):
 
 
 def caso_sem_template_com_retorico():
-    """Jefferson: só há 'Atualmente,' retórico + âncora de gratuidade."""
-    print("caso 1: sem template, com retórico (Jefferson)")
-    xml = _doc(_p(RETORICO), _p(GRATUIDADE))
+    """Jefferson: título da seção + 'Atualmente,' retórico no mérito."""
+    print("caso 1: sem template, abre a seção com o socio (Jefferson)")
+    # ordem no documento: retórico (no mérito) ... título gratuidade, Cumpre, Requer
+    xml = _doc(_p(RETORICO), _p(HDR), _p(CUMPRE), _p(GRATUIDADE))
     log, info = [], {}
     out = corrections.inserir_socio_texto(xml, SOCIO, log, info)
     t = _texto(out)
     check(info.get("ok") is True, "info.ok == True")
-    check("inserção na Gratuidade" in info.get("via", ""), "via = inserção na Gratuidade")
-    check(RETORICO in t, "parágrafo retórico permanece intacto")
+    check("início da seção" in info.get("via", ""), "via = início da seção de Gratuidade")
+    check(RETORICO in t, "parágrafo retórico do mérito permanece intacto")
     check("analista" in t, "texto socioeconômico foi inserido")
-    # socio deve vir DEPOIS da gratuidade (na seção certa), não no lugar do retórico
-    check(t.index("analista") > t.index("todos em anexo aos autos"),
-          "socio inserido após a gratuidade")
+    # socio deve ficar ENTRE o título e o "Cumpre informar" (primeiro parágrafo da seção)
+    check(t.index("JUSTIÇA GRATUITA") < t.index("analista") < t.index("Cumpre informar"),
+          "socio abre a seção (após o título, antes do 'Cumpre informar')")
 
 
 def caso_com_template():
@@ -102,7 +108,7 @@ def caso_sem_ancora():
 def caso_idempotente():
     """Rodar de novo sobre a peça já individualizada não duplica o socio."""
     print("caso 4: idempotência (reprocessar)")
-    xml = _doc(_p(RETORICO), _p(GRATUIDADE))
+    xml = _doc(_p(RETORICO), _p(HDR), _p(CUMPRE), _p(GRATUIDADE))
     out1 = corrections.inserir_socio_texto(xml, SOCIO, [], {})
     out2 = corrections.inserir_socio_texto(out1, SOCIO, [], {})
     check(_texto(out2).count("analista") == 1, "socio continua único após reprocessar")
