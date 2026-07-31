@@ -209,8 +209,9 @@
     const idxExp = []; let r3 = /EXPEDICAO|EMISSAO|VALIDADE|EXPIRY|ISSUE/g, m3; while ((m3 = r3.exec(up))) idxExp.push(m3.index);
     const mrz = up.match(/\b(\d{2})(\d{2})(\d{2})\d?([MF])[A-Z<0-9]{3,}/);
     let dob = null;
-    // 1) data mais próxima logo DEPOIS de um rótulo de nascimento
-    for (const n of idxNasc) { const c = datas.filter(d => d.i >= n && d.i - n < 45).sort((a, b) => a.i - b.i)[0]; if (c) { dob = c.v; break; } }
+    // 1) data mais próxima de um rótulo de nascimento (a ordem do OCR varia entre
+    //    colunas — na CNH o rótulo e a data podem sair separados pelo CPF)
+    for (const n of idxNasc) { const c = datas.filter(d => Math.abs(d.i - n) < 60).sort((a, b) => Math.abs(a.i - n) - Math.abs(b.i - n))[0]; if (c) { dob = c.v; break; } }
     // 2) MRZ da CIN (AAMMDD + sexo)
     if (!dob && mrz) dob = norm(mrz[3], mrz[2], mrz[1]);
     // 3) fallback: uma data plausível que NÃO esteja colada em "expedição/validade"
@@ -221,17 +222,48 @@
     return { dob, sexo };
   }
 
+  // Worker de OCR com TODOS os assets no mesmo CDN (jsdelivr) que já carrega o app.
+  // Evita o modo curto Tesseract.recognize(), que busca worker/core/idioma em
+  // unpkg + tessdata.projectnaptha.com — hosts que a rede do escritório pode
+  // bloquear, fazendo o OCR falhar em silêncio (ex.: CNH "não lida").
+  const TJS = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/";
+  let _ocrWorker = null;
+  async function getOcrWorker() {
+    if (_ocrWorker) return _ocrWorker;
+    _ocrWorker = await Tesseract.createWorker("por", 1, {
+      workerPath: TJS + "worker.min.js",
+      corePath: "https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0/",
+      langPath: "https://cdn.jsdelivr.net/gh/naptha/tessdata@gh-pages/4.0.0",
+      logger: m => { if (m && m.status && m.progress != null) det("🔎 OCR: " + m.status + " " + Math.round(m.progress * 100) + "%"); },
+    });
+    return _ocrWorker;
+  }
+  // realça a foto do documento (cinza + contraste) — ajuda o OCR em CNH/RG fotografados.
+  function realcar(cv) {
+    const ctx = cv.getContext("2d");
+    const im = ctx.getImageData(0, 0, cv.width, cv.height), d = im.data;
+    for (let i = 0; i < d.length; i += 4) {
+      let g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      g = (g - 128) * 1.35 + 128;
+      g = g < 0 ? 0 : g > 255 ? 255 : g;
+      d[i] = d[i + 1] = d[i + 2] = g;
+    }
+    ctx.putImageData(im, 0, 0);
+    return cv;
+  }
   async function ocrPdf(file, maxPaginas) {
     const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const worker = await getOcrWorker();
     let full = "";
     const n = Math.min(maxPaginas, pdf.numPages);
     for (let i = 1; i <= n; i++) {
       det("🔎 Lendo a imagem do documento (OCR " + i + "/" + n + ")…");
       const page = await pdf.getPage(i);
-      const vp = page.getViewport({ scale: 2.6 });
+      const vp = page.getViewport({ scale: 3.0 });
       const cv = document.createElement("canvas"); cv.width = vp.width; cv.height = vp.height;
       await page.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
-      const res = await Tesseract.recognize(cv, "por");
+      realcar(cv);
+      const res = await worker.recognize(cv);
       full += "\n" + res.data.text;
       // se já achou nascimento, não precisa OCR das próximas páginas
       if (parseIdentidade(full).dob) break;
@@ -281,15 +313,25 @@
       // nascimento / sexo (texto e, se preciso, OCR do RG)
       let txt = arqs.docs ? await lerPdfTexto(arqs.docs) : "";
       let r = parseIdentidade(txt);
+      let usouOcr = false;
       if (!r.dob && arqs.docs && typeof Tesseract !== "undefined") {
-        const otxt = await ocrPdf(arqs.docs, 3);
+        usouOcr = true;
+        const otxt = await ocrPdf(arqs.docs, 4);
         r = parseIdentidade(txt + "\n" + otxt);
       }
       if (r.dob) { $("#nasc").value = r.dob; partes.push("nascimento <b>" + r.dob + "</b>"); }
       if (r.sexo) { const el = document.querySelector('input[name=sexo][value="' + r.sexo + '"]'); if (el) el.checked = true; partes.push("sexo <b>" + (r.sexo === "F" ? "Feminino" : "Masculino") + "</b>"); }
-      det(partes.length
-        ? "✅ Detectado dos documentos: " + partes.join(" · ") + ". Confira e ajuste se necessário."
-        : "⚠️ Não consegui detectar automaticamente — preencha olhando os documentos.");
+      let msg;
+      if (partes.length) {
+        msg = "✅ Detectado dos documentos: " + partes.join(" · ") + ". Confira e ajuste se necessário.";
+        // CNH não traz o campo de sexo — avisa para selecionar manualmente.
+        if (r.dob && !r.sexo) msg += " ⚠️ O documento (ex.: CNH) não informa o sexo — selecione manualmente.";
+      } else if (usouOcr) {
+        msg = "⚠️ Não consegui ler o documento por OCR. Verifique a conexão (o OCR baixa o idioma do jsdelivr) e a nitidez da foto; ou preencha manualmente.";
+      } else {
+        msg = "⚠️ Não consegui detectar automaticamente — preencha olhando os documentos.";
+      }
+      det(msg);
     } catch (e) { det("⚠️ Falha na leitura automática (" + e.message + ") — preencha manualmente."); }
   }
 
