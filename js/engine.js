@@ -304,21 +304,42 @@
       .replace(/\s{2,}/g, " ");
     return t.trim();
   }
+  // um parágrafo é o socioeconômico (template) se começa com "Atualmente," E
+  // traz marcadores de renda/provedor/hipossuficiência — evita casar o parágrafo
+  // retórico "Atualmente, no Brasil, instalou-se uma cultura...".
+  function ehParaSocio(t) {
+    const s = t.toLowerCase();
+    if (s.indexOf("atualmente,") < 0) return false;
+    return /autor\(a\)|provedor|impossibilitad|renda mensal|reside um total|sua resid[êe]ncia|é o único|hipossufici/.test(s);
+  }
+  function paraContendoPred(xml, pred) {
+    const re = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g; let m;
+    while ((m = re.exec(xml))) {
+      const t = (m[0].match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || []).map(r => r.replace(/<w:t[^>]*>/, "").replace("</w:t>", "")).join("");
+      if (pred(t)) return { ini: m.index, fim: m.index + m[0].length, tag: m[0] };
+    }
+    return null;
+  }
   function socioeconomico(xml, socioTexto, log) {
     if (!socioTexto) return neutralizarSocioExistente(xml, log);
     const texto = limparSocio(socioTexto);
     if (!texto) return neutralizarSocioExistente(xml, log);
-    const r = paraContendo(xml, "Atualmente,");
+    // 1) existe parágrafo socioeconômico template? substitui.
+    const r = paraContendoPred(xml, ehParaSocio);
     if (r) {
       const novoP = r.tag.replace(/<w:r\b[\s\S]*<\/w:r>/, '<w:r>' + RPR + '<w:t xml:space="preserve">' + texto + '</w:t></w:r>');
-      log.push("Socioeconômico individualizado/neutralizado");
+      log.push("Socioeconômico individualizado/neutralizado (parágrafo existente)");
       return xml.slice(0, r.ini) + novoP + xml.slice(r.fim);
     }
+    // 2) não existe: insere na seção de Gratuidade (após uma âncora conhecida).
     for (const anc of ["rendimento da parte autora", "rendimento da parte Autora",
       "extrato de renda dos últimos 3", "todos em anexo aos autos",
-      "hipossuficiência econômica da parte", "declaração de hipossuficiência e extratos bancários"]) {
-      const [x2, ok] = inserirApos(xml, anc, para(PPR_BODY, RPR, texto)); if (ok) { log.push("Socioeconômico inserido"); return x2; }
+      "hipossuficiência econômica da parte", "declaração de hipossuficiência e extratos bancários",
+      "GRATUIDADE DE JUSTIÇA", "gratuidade de justiça"]) {
+      const [x2, ok] = inserirApos(xml, anc, para(PPR_BODY, RPR, texto)); if (ok) { log.push("Socioeconômico inserido na seção de Gratuidade"); return x2; }
     }
+    // 3) não achou lugar seguro: NÃO altera e avisa.
+    log.push("⚠️ Socioeconômico NÃO individualizado automaticamente — âncora da Gratuidade não encontrada. Inserir manualmente e retornar ao ORG DOC.");
     return xml;
   }
   function neutralizarSocioExistente(xml, log) {

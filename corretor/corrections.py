@@ -130,6 +130,21 @@ def _limpar_socio(t):
     return t.strip()
 
 
+_MARC_SOCIO = re.compile(
+    r"autor\(a\)|provedor|impossibilitad|renda mensal|reside um total|"
+    r"sua resid[êe]ncia|é o único|hipossufici", re.I)
+
+
+def _para_socio(xml):
+    """Parágrafo socioeconômico (começa com 'Atualmente,' E tem marcadores de
+    renda/provedor). Evita casar o 'Atualmente, no Brasil...' retórico."""
+    for m in re.finditer(r'<w:p\b[^>]*>.*?</w:p>', xml, flags=re.S):
+        t = "".join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', m.group(0)))
+        if "Atualmente," in t and _MARC_SOCIO.search(t):
+            return m.start(), m.end(), m.group(0)
+    return None
+
+
 def socioeconomico(xml, pasta, log):
     """Usa o socio economico.docx da pasta: neutraliza e insere/substitui na peça."""
     if not pasta:
@@ -146,28 +161,32 @@ def socioeconomico(xml, pasta, log):
     texto = _limpar_socio(" ".join(p for p in paras if p.strip()))
     if not texto:
         return neutralizar_socioeconomico(xml, log)
-    # já existe parágrafo "Atualmente," na peça? substitui o run
-    estrutura._para_de.xml = xml
-    achou = estrutura._para_de("Atualmente,")
+    # 1) existe parágrafo socioeconômico template (começa com "Atualmente," E tem
+    #    marcadores de renda/provedor)? substitui o run — sem casar o "Atualmente,"
+    #    retórico ("Atualmente, no Brasil, instalou-se uma cultura...").
+    achou = _para_socio(xml)
     if achou:
         ini, fim, ptag = achou
-        # troca o conteúdo dos <w:t> do parágrafo por um único texto
         novo_p = re.sub(r'(<w:r\b.*</w:r>)',
                         '<w:r>%s<w:t xml:space="preserve">%s</w:t></w:r>' % (estrutura.RPR, texto),
                         ptag, count=1, flags=re.S)
         xml = xml[:ini] + novo_p + xml[fim:]
         log.append("Socioeconômico individualizado/neutralizado (parágrafo existente)")
         return xml
-    # não existe: insere após o fim da seção de gratuidade
+    # 2) não existe: insere na seção de gratuidade (após uma âncora conhecida)
     novo = estrutura._para(estrutura.PPR_BODY, estrutura.RPR, texto)
     for anc in ["rendimento da parte autora", "rendimento da parte Autora",
                 "extrato de renda dos últimos 3", "todos em anexo aos autos",
                 "hipossuficiência econômica da parte",
-                "declaração de hipossuficiência e extratos bancários"]:
+                "declaração de hipossuficiência e extratos bancários",
+                "GRATUIDADE DE JUSTIÇA", "gratuidade de justiça"]:
         xml2, ok = estrutura._inserir_apos(xml, anc, novo)
         if ok:
             log.append("Socioeconômico inserido na seção de Gratuidade")
             return xml2
+    # 3) não achou lugar seguro: NÃO altera e avisa
+    log.append("⚠️ Socioeconômico NÃO individualizado automaticamente — âncora da "
+               "Gratuidade não encontrada. Inserir manualmente e retornar ao ORG DOC.")
     return xml
 
 
