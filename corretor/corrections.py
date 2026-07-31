@@ -145,22 +145,18 @@ def _para_socio(xml):
     return None
 
 
-def socioeconomico(xml, pasta, log):
-    """Usa o socio economico.docx da pasta: neutraliza e insere/substitui na peça."""
-    if not pasta:
-        return xml
-    cand = glob.glob(os.path.join(pasta, "*ocio*conomico*.docx")) + \
-        glob.glob(os.path.join(pasta, "*ocio*.docx"))
-    if not cand:
-        # sem arquivo: apenas neutraliza o parágrafo existente
-        return neutralizar_socioeconomico(xml, log)
-    try:
-        paras = docxio.docx_para_texto(cand[0])
-    except Exception:
-        return neutralizar_socioeconomico(xml, log)
-    texto = _limpar_socio(" ".join(p for p in paras if p.strip()))
+def inserir_socio_texto(xml, texto, log, info=None):
+    """Insere/substitui o texto socioeconômico já limpo. Núcleo testável.
+
+    Registra o resultado em `info` (dict): {pedido, ok, via}.
+    """
+    if info is None:
+        info = {}
+    info["pedido"] = True
+    info["ok"] = False
     if not texto:
-        return neutralizar_socioeconomico(xml, log)
+        info["via"] = "texto vazio"
+        return xml
     # 1) existe parágrafo socioeconômico template (começa com "Atualmente," E tem
     #    marcadores de renda/provedor)? substitui o run — sem casar o "Atualmente,"
     #    retórico ("Atualmente, no Brasil, instalou-se uma cultura...").
@@ -172,6 +168,8 @@ def socioeconomico(xml, pasta, log):
                         ptag, count=1, flags=re.S)
         xml = xml[:ini] + novo_p + xml[fim:]
         log.append("Socioeconômico individualizado/neutralizado (parágrafo existente)")
+        info["ok"] = True
+        info["via"] = "substituição de parágrafo existente"
         return xml
     # 2) não existe: insere na seção de gratuidade (após uma âncora conhecida)
     novo = estrutura._para(estrutura.PPR_BODY, estrutura.RPR, texto)
@@ -183,11 +181,41 @@ def socioeconomico(xml, pasta, log):
         xml2, ok = estrutura._inserir_apos(xml, anc, novo)
         if ok:
             log.append("Socioeconômico inserido na seção de Gratuidade")
+            info["ok"] = True
+            info["via"] = "inserção na Gratuidade (âncora: %s)" % anc
             return xml2
     # 3) não achou lugar seguro: NÃO altera e avisa
     log.append("⚠️ Socioeconômico NÃO individualizado automaticamente — âncora da "
                "Gratuidade não encontrada. Inserir manualmente e retornar ao ORG DOC.")
+    info["via"] = "nenhuma âncora encontrada"
     return xml
+
+
+def socioeconomico(xml, pasta, log, info=None):
+    """Usa o socio economico.docx da pasta: neutraliza e insere/substitui na peça."""
+    if info is None:
+        info = {}
+    if not pasta:
+        info["pedido"] = False
+        info["ok"] = True
+        return xml
+    cand = glob.glob(os.path.join(pasta, "*ocio*conomico*.docx")) + \
+        glob.glob(os.path.join(pasta, "*ocio*.docx"))
+    if not cand:
+        # sem arquivo: apenas neutraliza o parágrafo existente
+        info["pedido"] = False
+        info["ok"] = True
+        return neutralizar_socioeconomico(xml, log)
+    try:
+        paras = docxio.docx_para_texto(cand[0])
+    except Exception:
+        info["pedido"] = True
+        info["ok"] = False
+        info["via"] = "falha ao ler o socio.docx"
+        log.append("⚠️ Socioeconômico NÃO individualizado — não consegui ler o arquivo. Inserir manualmente (ORG DOC).")
+        return neutralizar_socioeconomico(xml, log)
+    texto = _limpar_socio(" ".join(p for p in paras if p.strip()))
+    return inserir_socio_texto(xml, texto, log, info)
 
 
 def aplicar(xml, ctx, log):
@@ -196,9 +224,10 @@ def aplicar(xml, ctx, log):
     ctx = {sexo, numero_endereco, idoso, nascimento, idade, pasta,
            alvo_vara_comum, valores}
     """
+    socio_info = {}
     xml = corrigir_genero_qualificacao(xml, ctx.get("sexo"), log)
     xml = inserir_numero_endereco(xml, ctx.get("numero_endereco"), log)
-    xml = socioeconomico(xml, ctx.get("pasta"), log)
+    xml = socioeconomico(xml, ctx.get("pasta"), log, socio_info)
     xml = corrigir_dano_moral_extenso(xml, log)
     xml = estrutura.corrigir_extensos(xml, ctx.get("valores") or [], log)
     if ctx.get("alvo_vara_comum") is not None:
@@ -210,6 +239,10 @@ def aplicar(xml, ctx, log):
     xml = neutralizar_linguagem(xml, log)
     xml = estrutura.renumerar_pedidos(xml, log)
     xml = revisao.revisar(xml, log)  # ortografia/tipografia + latim em itálico + avisos
+    # trava de segurança: pediu socio e não entrou -> alerta
+    if socio_info.get("pedido") and not socio_info.get("ok") and \
+            not any("Socioeconômico NÃO individualizado" in l for l in log):
+        log.append("⚠️ Socioeconômico NÃO individualizado — revisar manualmente (ORG DOC).")
     return xml
 
 

@@ -320,15 +320,18 @@
     }
     return null;
   }
-  function socioeconomico(xml, socioTexto, log) {
-    if (!socioTexto) return neutralizarSocioExistente(xml, log);
+  function socioeconomico(xml, socioTexto, log, info) {
+    info = info || {};
+    if (!socioTexto) { info.pedido = false; info.ok = true; info.via = "sem texto socioeconômico (opcional)"; return neutralizarSocioExistente(xml, log); }
     const texto = limparSocio(socioTexto);
-    if (!texto) return neutralizarSocioExistente(xml, log);
+    info.pedido = true; info.ok = false;
+    if (!texto) { info.via = "texto socioeconômico vazio após limpeza"; return neutralizarSocioExistente(xml, log); }
     // 1) existe parágrafo socioeconômico template? substitui.
     const r = paraContendoPred(xml, ehParaSocio);
     if (r) {
       const novoP = r.tag.replace(/<w:r\b[\s\S]*<\/w:r>/, '<w:r>' + RPR + '<w:t xml:space="preserve">' + texto + '</w:t></w:r>');
       log.push("Socioeconômico individualizado/neutralizado (parágrafo existente)");
+      info.ok = true; info.via = "substituição de parágrafo existente";
       return xml.slice(0, r.ini) + novoP + xml.slice(r.fim);
     }
     // 2) não existe: insere na seção de Gratuidade (após uma âncora conhecida).
@@ -336,10 +339,11 @@
       "extrato de renda dos últimos 3", "todos em anexo aos autos",
       "hipossuficiência econômica da parte", "declaração de hipossuficiência e extratos bancários",
       "GRATUIDADE DE JUSTIÇA", "gratuidade de justiça"]) {
-      const [x2, ok] = inserirApos(xml, anc, para(PPR_BODY, RPR, texto)); if (ok) { log.push("Socioeconômico inserido na seção de Gratuidade"); return x2; }
+      const [x2, ok] = inserirApos(xml, anc, para(PPR_BODY, RPR, texto)); if (ok) { log.push("Socioeconômico inserido na seção de Gratuidade"); info.ok = true; info.via = "inserção na Gratuidade (âncora: " + anc + ")"; return x2; }
     }
     // 3) não achou lugar seguro: NÃO altera e avisa.
     log.push("⚠️ Socioeconômico NÃO individualizado automaticamente — âncora da Gratuidade não encontrada. Inserir manualmente e retornar ao ORG DOC.");
+    info.via = "NENHUMA âncora encontrada";
     return xml;
   }
   function neutralizarSocioExistente(xml, log) {
@@ -521,10 +525,11 @@
   /* ------------------------- orquestração ------------------------- */
   LEX.corrigir = function (docXml, stylesXml, ctx) {
     const log = [];
+    const socioInfo = {};
     let xml = LEX.mergeRuns(docXml);
     xml = corrigirGenero(xml, ctx.sexo, log);
     xml = inserirNumero(xml, ctx.numero_endereco, log);
-    xml = socioeconomico(xml, ctx.socio_texto, log);
+    xml = socioeconomico(xml, ctx.socio_texto, log, socioInfo);
     xml = danoMoralExtenso(xml, log);
     xml = corrigirExtensos(xml, ctx.valores || [], log);
     if (ctx.alvo_vara_comum != null) xml = ajustarEnderecamento(xml, ctx.alvo_vara_comum, log);
@@ -537,7 +542,10 @@
     let styles = stylesXml;
     [xml, styles] = formatarTudo(xml, styles);
     log.push("Formatação: 1,15; tabelas centralizadas e inteiras; títulos não separados");
-    return { doc: xml, styles: styles, log: log };
+    // trava de segurança: se havia texto socioeconômico e ele NÃO entrou, alerta.
+    if (socioInfo.pedido && !socioInfo.ok && !log.some(l => l.indexOf("Socioeconômico NÃO individualizado") >= 0))
+      log.push("⚠️ Socioeconômico NÃO individualizado — revisar manualmente (ORG DOC).");
+    return { doc: xml, styles: styles, log: log, socio: socioInfo };
   };
   LEX.snippetsIdoso = function (nasc, idade) {
     const ext = LEX.extenso(idade).replace(" reais", "").replace(" real", "");

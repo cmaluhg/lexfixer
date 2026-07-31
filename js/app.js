@@ -174,8 +174,11 @@
       tb.appendChild(tr);
     });
     $("#log").innerHTML = res.log.map(x => "<li>" + esc(x) + "</li>").join("");
-    $("#warnIdoso").innerHTML = chk.idoso
-      ? "<div class='warn-box'>Cliente idoso: os itens de prioridade (cabeçalho, tópico e pedido) foram inseridos automaticamente — confira antes de protocolar.</div>" : "";
+    let avisos = "";
+    if (chk.idoso) avisos += "<div class='warn-box'>Cliente idoso: os itens de prioridade (cabeçalho, tópico e pedido) foram inseridos automaticamente — confira antes de protocolar.</div>";
+    if (res.socio && res.socio.pedido && !res.socio.ok)
+      avisos += "<div class='warn-box' style='background:#fdecea;border-color:#e74c3c;color:#922'>⚠️ Socioeconômico NÃO individualizado automaticamente (não encontrei onde inseri-lo). Insira o texto manualmente na seção de Gratuidade e <b>retorne ao ORG DOC</b>.</div>";
+    $("#warnIdoso").innerHTML = avisos;
     $("#resultado").classList.remove("hidden");
     $("#resultado").scrollIntoView({ behavior: "smooth" });
   });
