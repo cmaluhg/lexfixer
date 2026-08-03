@@ -32,6 +32,11 @@ def extrair_peticao(caminho_docx):
     l1 = paras[0].upper() if paras else ""
     d["endereco_juizado"] = "JUIZADO ESPECIAL" in l1
     d["endereco_vara_comum"] = ("VARA C" in l1 and "JUIZADO" not in l1)
+    # Ausência de Notificação Prévia (ANP): sempre Justiça Comum, independente do valor.
+    import unicodedata as _u
+    _dt = "".join(c for c in _u.normalize("NFD", texto) if _u.category(c) != "Mn").upper()
+    d["anp"] = bool(re.search(r"NOTIFICACAO PREVIA|PREVIA NOTIFICACAO|"
+                              r"AUSENCIA DE (PREVIA )?NOTIFICACAO|SEM (PREVIA )?NOTIFICACAO", _dt))
     mcom = re.search(r'COMARCA DE ([A-ZÀ-Ú/ ]+)', l1)
     d["comarca"] = mcom.group(1).strip().rstrip(".") if mcom else ""
 

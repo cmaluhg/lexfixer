@@ -109,6 +109,8 @@
     const l1 = (paras[0] || "").toUpperCase();
     d.endereco_juizado = l1.indexOf("JUIZADO ESPECIAL") >= 0;
     d.endereco_vara_comum = l1.indexOf("VARA C") >= 0 && l1.indexOf("JUIZADO") < 0;
+    // Ausência de Notificação Prévia (ANP): sempre Justiça Comum, independente do valor.
+    d.anp = /NOTIFICACAO PREVIA|PREVIA NOTIFICACAO|AUSENCIA DE (PREVIA )?NOTIFICACAO|SEM (PREVIA )?NOTIFICACAO/.test(deburrUp(texto));
     let m = l1.match(/COMARCA DE ([A-ZÀ-Ú/ ]+)/); d.comarca = m ? m[1].trim().replace(/\.+$/, "") : "";
     m = texto.match(/RG sob n[ºo]?\s*([\d.\-]+)/); d.rg = m ? m[1].replace(/\D/g, "") : null;
     m = texto.match(/CPF sob o n[ºo]?\s*([\d.\-]+)/); d.cpf = m ? m[1].trim() : null;
@@ -180,7 +182,9 @@
     const rub = ((pet.rubrica_texto || "") + " " + (plan.rubricas || []).join(" ")).toUpperCase();
     const excs = EXC.filter(k => rub.indexOf(k) >= 0); const temExc = excs.length > 0;
     const vc = pet.valor_causa;
-    if (temExc) ach.push(F(1, "Endereçamento", pet.endereco_vara_comum ? "OK" : "ATENCAO",
+    if (pet.anp) ach.push(F(1, "Endereçamento", pet.endereco_vara_comum ? "OK" : "CORRIGIR",
+      "Ausência de notificação prévia → SEMPRE Vara Cível Comum, independente do valor."));
+    else if (temExc) ach.push(F(1, "Endereçamento", pet.endereco_vara_comum ? "OK" : "ATENCAO",
       "Rubrica na EXCEÇÃO (" + excs.join(", ") + ") → Vara Cível Comum. Confirmar com o advogado."));
     else if (vc != null) { const alvoJ = vc <= TETO; const ok = alvoJ ? pet.endereco_juizado : pet.endereco_vara_comum;
       ach.push(F(1, "Endereçamento", ok ? "OK" : "CORRIGIR",
@@ -473,7 +477,27 @@
     out += xml.slice(last);
     return out;
   }
-  function formatarTudo(doc, styles) { [doc, styles] = espac115(doc, styles); doc = centralizarTabelas(doc); doc = tabelasInteiras(doc); doc = titulosJuntos(doc); return [doc, styles]; }
+  // colapsa sequências de parágrafos VAZIOS (2+ -> 1) para remover os "buracos"
+  // entre seções (ex.: antes de "3. DO MÉRITO"). Preserva quebras de página/imagens.
+  function colapsarVazios(xml, maximo) {
+    maximo = maximo || 1;
+    const re = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g; let m; let out = ""; let last = 0; let run = 0;
+    while ((m = re.exec(xml))) {
+      const gap = xml.slice(last, m.index); last = m.index + m[0].length;
+      if (gap.indexOf("<w:tbl") >= 0 || /<w:p\b/.test(gap)) run = 0;
+      out += gap;
+      const pt = m[0];
+      const txt = (pt.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || []).map(r => r.replace(/<w:t[^>]*>/, "").replace("</w:t>", "")).join("");
+      const protegido = /w:type="page"|pageBreakBefore|<w:drawing|<w:pict|<w:object|<w:sectPr/.test(pt);
+      const vazio = txt.trim() === "" && !protegido;
+      if (vazio) { run++; if (run > maximo) continue; }  // descarta o excedente
+      else run = 0;
+      out += pt;
+    }
+    out += xml.slice(last);
+    return out;
+  }
+  function formatarTudo(doc, styles) { [doc, styles] = espac115(doc, styles); doc = centralizarTabelas(doc); doc = tabelasInteiras(doc); doc = colapsarVazios(doc, 1); doc = titulosJuntos(doc); return [doc, styles]; }
   LEX.formatarTudo = formatarTudo;
 
   /* ------------------------- revisão ortográfica/formatação ------------------------- */

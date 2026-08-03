@@ -99,9 +99,39 @@ def titulos_juntos(xml):
     return "".join(out)
 
 
+def colapsar_vazios(xml, maximo=1):
+    """Colapsa sequências de parágrafos VAZIOS (2+ -> `maximo`) para remover os
+    'buracos' entre seções (ex.: antes de '3. DO MÉRITO'). Preserva quebras de
+    página, imagens e sectPr."""
+    blocks = list(re.finditer(r'<w:p\b[^>]*>.*?</w:p>', xml, flags=re.S))
+    out = []
+    last = 0
+    run = 0
+    for m in blocks:
+        gap = xml[last:m.start()]
+        last = m.end()
+        if '<w:tbl' in gap or re.search(r'<w:p\b', gap):
+            run = 0
+        out.append(gap)
+        pt = m.group(0)
+        txt = "".join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', pt))
+        protegido = bool(re.search(r'w:type="page"|pageBreakBefore|<w:drawing|<w:pict|<w:object|<w:sectPr', pt))
+        vazio = (txt.strip() == "") and not protegido
+        if vazio:
+            run += 1
+            if run > maximo:
+                continue  # descarta o excedente
+        else:
+            run = 0
+        out.append(pt)
+    out.append(xml[last:])
+    return "".join(out)
+
+
 def aplicar_tudo(document_xml, styles_xml=None):
     document_xml, styles_xml = espacamento_115(document_xml, styles_xml)
     document_xml = centralizar_tabelas(document_xml)
     document_xml = tabelas_inteiras(document_xml)
+    document_xml = colapsar_vazios(document_xml, 1)
     document_xml = titulos_juntos(document_xml)
     return document_xml, styles_xml

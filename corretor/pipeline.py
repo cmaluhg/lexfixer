@@ -53,8 +53,8 @@ def processar(arqs, op, destino_docx):
     except KeyError:
         styles = None
 
-    # endereçamento alvo: exceção→Vara Comum; senão pelo valor da causa
-    if chk["tem_excecao"] or op.get("forcar_vara_comum"):
+    # endereçamento alvo: ANP e exceção→Vara Comum; senão pelo valor da causa
+    if pet.get("anp") or chk["tem_excecao"] or op.get("forcar_vara_comum"):
         alvo_vara = True
     elif pet.get("valor_causa") is not None:
         alvo_vara = pet["valor_causa"] > checks.TETO_JUIZADO

@@ -178,8 +178,12 @@
     const p = state.peticao.data, pl = state.plan, ex = state.extrato;
     const op = { sexo, nascimento: nasc };
     const chk = LEX.conferir(p, pl, ex, op);
+    // Ausência de Notificação Prévia (ANP) → SEMPRE Vara Comum (texto da peça ou nome do arquivo).
+    const nomePet = deburr(state.peticao.nomeBase || "");
+    const anp = !!(p.anp) || /\bANP\b|NOTIF|AUSENCIA DE NOTIF/.test(nomePet);
     let alvoVara = null;
-    if (chk.temExc) alvoVara = true;
+    if (anp) alvoVara = true;
+    else if (chk.temExc) alvoVara = true;
     else if (p.valor_causa != null) alvoVara = p.valor_causa > 64840;
     const ctx = {
       sexo, nascimento: nasc, idade: chk.idade, idoso: chk.idoso,
