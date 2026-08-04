@@ -109,30 +109,63 @@
     if (!arqs.peticao) { alert("Não encontrei a petição (.docx) na pasta."); return; }
     $("#dados").innerHTML = "Lendo arquivos…";
     $("#painel").classList.remove("hidden");
-    // dica quando o navegador perde a referência do arquivo (aberto no Word / drive de rede)
-    const dicaArquivo = e => {
-      const m = (e && e.message) || String(e);
-      return /not be found|NotFound|could not be read|permission/i.test(m)
-        ? m + " — feche o arquivo no Word/Office e recarregue a pasta (arquivo aberto ou em sincronização travam a leitura)."
-        : m;
-    };
-    // a petição é essencial: se falhar, para com instrução clara
+    state.arqs = arqs;   // guarda para a leitura manual reaproveitar os kits
     try {
-      state.peticao = await lerDocxPartes(arqs.peticao);
-      state.peticao.nomeBase = arqs.peticao.name.replace(/\.docx$/i, "");
-      state.peticao.data = LEX.extrairPeticao(LEX.mergeRuns(state.peticao.doc));
+      await carregarPeticao(arqs.peticao);
     } catch (err) {
-      const naoAchou = /not be found|NotFound|could not be read|permission/i.test((err && err.message) || String(err));
-      $("#dados").innerHTML = naoAchou
-        ? "⚠️ <b>Não consegui abrir a petição</b> — o arquivo mudou depois que a pasta foi selecionada (aberto no Word ou baixando no OneDrive). Repetir não resolve; faça assim:" +
-          "<ol style='margin:8px 0 0 18px;padding:0'>" +
-          "<li><b>Feche</b> a petição (e o socioeconômico) no Word/Office.</li>" +
-          "<li>Se a pasta estiver no <b>OneDrive</b>: botão direito na pasta → <b>“Sempre manter neste dispositivo”</b> e aguarde baixar (ícone verde ✓).</li>" +
-          "<li><b>Selecione a pasta novamente</b> no botão acima (só recarregar a página não basta).</li>" +
-          "</ol>"
-        : "⚠️ Não consegui ler a <b>petição</b>: " + esc((err && err.message) || String(err));
+      mostrarFalhaPeticao(err);
       return;
     }
+    await continuarAposPeticao();
+  });
+
+  // dica quando o navegador perde a referência do arquivo (nuvem/rede/aberto)
+  function dicaArquivo(e) {
+    const m = (e && e.message) || String(e);
+    return /not be found|NotFound|could not be read|permission/i.test(m)
+      ? m + " — arquivo em nuvem (OneDrive) ou em sincronização. Baixe-o localmente e tente de novo."
+      : m;
+  }
+
+  async function carregarPeticao(file) {
+    state.peticao = await lerDocxPartes(file);
+    state.peticao.nomeBase = file.name.replace(/\.docx$/i, "");
+    state.peticao.data = LEX.extrairPeticao(LEX.mergeRuns(state.peticao.doc));
+  }
+
+  function mostrarFalhaPeticao(err) {
+    const nome = (err && err.name) ? err.name : "";
+    $("#dados").innerHTML =
+      "⚠️ <b>Não consegui abrir a petição</b> " + (nome ? "<span class='hint'>(" + esc(nome) + ")</span>" : "") + ". " +
+      "Isso quase sempre é o arquivo estar <b>só na nuvem</b> (OneDrive) e não baixado no PC — mesmo fechado no Word. Resolva por um destes caminhos:" +
+      "<ol style='margin:8px 0 8px 18px;padding:0'>" +
+      "<li><b>Mais garantido:</b> copie a pasta do cliente para um local local, ex.: <b>C:\\Temp</b>, e selecione essa cópia.</li>" +
+      "<li>Ou no <b>OneDrive</b>: botão direito na pasta → <b>“Sempre manter neste dispositivo”</b> e espere o ícone verde ✓; depois selecione a pasta de novo.</li>" +
+      "</ol>" +
+      "<button id='btnPetManual' class='dl' style='margin-top:4px'>📄 Selecionar a petição (.docx) manualmente</button>" +
+      "<div class='hint' style='margin-top:6px'>A seleção direta do arquivo costuma forçar o download e ler na hora.</div>";
+    const b = document.getElementById("btnPetManual");
+    if (b) b.addEventListener("click", () => petManualInput().click());
+  }
+
+  // input de arquivo único (criado sob demanda) para releitura manual da petição
+  let _petInput = null;
+  function petManualInput() {
+    if (_petInput) return _petInput;
+    _petInput = document.createElement("input");
+    _petInput.type = "file"; _petInput.accept = ".docx"; _petInput.style.display = "none";
+    document.body.appendChild(_petInput);
+    _petInput.addEventListener("change", async function () {
+      const f = this.files && this.files[0]; if (!f) return;
+      $("#dados").innerHTML = "Lendo a petição selecionada…";
+      try { await carregarPeticao(f); await continuarAposPeticao(); }
+      catch (err) { $("#dados").innerHTML = "⚠️ Ainda não consegui ler a petição: " + esc(dicaArquivo(err)); }
+    });
+    return _petInput;
+  }
+
+  async function continuarAposPeticao() {
+    const arqs = state.arqs || {};
     // demais kits: cada um isolado — uma falha não derruba o resto
     const avisosLeitura = [];
     try { state.plan = arqs.xlsx ? LEX.extrairPlanilha(await lerXlsxLinhas(arqs.xlsx)) : { rubricas: [] }; }
@@ -144,7 +177,7 @@
 
     const p = state.peticao.data, pl = state.plan, ex = state.extrato;
     $("#dados").innerHTML =
-      "<b>Endereçamento:</b> " + (p.endereco_juizado ? "Juizado" : (p.endereco_vara_comum ? "Vara Comum" : "?")) +
+      "<b>Endereçamento:</b> " + (p.endereco_juizado ? "Juizado" : (p.endereco_vara_comum ? "Vara Comum" : "?")) + (p.anp ? " <span class='hint'>(ANP → Vara Comum)</span>" : "") +
       " · <b>Comarca:</b> " + (p.comarca || "?") + "<br>" +
       "<b>RG:</b> " + (p.rg || "?") + " · <b>CPF:</b> " + (p.cpf || "?") + "<br>" +
       "<b>Agência/Conta:</b> " + p.agencia + " / " + p.conta + " <span class='hint'>(extrato: " + ex.agencia + " / " + ex.conta + ")</span><br>" +
@@ -165,9 +198,8 @@
       catch (err) { $("#rg").innerHTML = "<span class='hint'>não consegui renderizar a identidade (" + dicaArquivo(err) + ")</span>"; }
     } else $("#rg").innerHTML = "<span class='hint'>kit de documentos não encontrado</span>";
 
-    state.arqs = arqs;
-    autoDetectar(arqs);   // preenche nascimento/sexo a partir do documento
-  });
+    if (arqs.docs) autoDetectar(arqs);   // preenche nascimento/sexo a partir do documento
+  }
 
   $("#btnGerar").addEventListener("click", async function () {
     if (!state.peticao) { alert("Carregue a pasta primeiro."); return; }
