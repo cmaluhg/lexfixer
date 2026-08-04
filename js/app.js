@@ -137,29 +137,35 @@
     const nome = (err && err.name) ? err.name : "";
     $("#dados").innerHTML =
       "⚠️ <b>Não consegui abrir a petição</b> " + (nome ? "<span class='hint'>(" + esc(nome) + ")</span>" : "") + ". " +
-      "Isso quase sempre é o arquivo estar <b>só na nuvem</b> (OneDrive) e não baixado no PC — mesmo fechado no Word. Resolva por um destes caminhos:" +
+      "Como a pasta está num <b>servidor de rede</b>, a leitura em lote da pasta às vezes falha (o navegador perde a referência dos arquivos). " +
+      "A forma confiável é <b>selecionar os arquivos direto</b>:" +
       "<ol style='margin:8px 0 8px 18px;padding:0'>" +
-      "<li><b>Mais garantido:</b> copie a pasta do cliente para um local local, ex.: <b>C:\\Temp</b>, e selecione essa cópia.</li>" +
-      "<li>Ou no <b>OneDrive</b>: botão direito na pasta → <b>“Sempre manter neste dispositivo”</b> e espere o ícone verde ✓; depois selecione a pasta de novo.</li>" +
+      "<li>Clique no botão abaixo, <b>abra a pasta do cliente</b> e selecione <b>todos os arquivos</b> (Ctrl+A) → Abrir.</li>" +
+      "<li>Alternativa 100%: copie a pasta para o PC (ex.: <b>C:\\Temp</b>) e selecione essa cópia no botão de pasta.</li>" +
       "</ol>" +
-      "<button id='btnPetManual' class='dl' style='margin-top:4px'>📄 Selecionar a petição (.docx) manualmente</button>" +
-      "<div class='hint' style='margin-top:6px'>A seleção direta do arquivo costuma forçar o download e ler na hora.</div>";
+      "<button id='btnPetManual' class='dl' style='margin-top:4px'>📄 Selecionar os arquivos da pasta manualmente</button>";
     const b = document.getElementById("btnPetManual");
     if (b) b.addEventListener("click", () => petManualInput().click());
   }
 
-  // input de arquivo único (criado sob demanda) para releitura manual da petição
+  // input de múltiplos arquivos (criado sob demanda) — leitura fresca, contorna
+  // a "foto" desatualizada da varredura de pasta em servidor de rede.
   let _petInput = null;
   function petManualInput() {
     if (_petInput) return _petInput;
     _petInput = document.createElement("input");
-    _petInput.type = "file"; _petInput.accept = ".docx"; _petInput.style.display = "none";
+    _petInput.type = "file"; _petInput.multiple = true; _petInput.style.display = "none";
     document.body.appendChild(_petInput);
     _petInput.addEventListener("change", async function () {
-      const f = this.files && this.files[0]; if (!f) return;
-      $("#dados").innerHTML = "Lendo a petição selecionada…";
-      try { await carregarPeticao(f); await continuarAposPeticao(); }
-      catch (err) { $("#dados").innerHTML = "⚠️ Ainda não consegui ler a petição: " + esc(dicaArquivo(err)); }
+      const files = this.files; if (!files || !files.length) return;
+      $("#dados").innerHTML = "Lendo os arquivos selecionados…";
+      try {
+        const arqs = identificar(files);
+        if (!arqs.peticao) { $("#dados").innerHTML = "⚠️ Não encontrei a <b>petição (.docx)</b> entre os arquivos selecionados. Selecione a pasta inteira (Ctrl+A)."; return; }
+        state.arqs = arqs;
+        await carregarPeticao(arqs.peticao);
+        await continuarAposPeticao();
+      } catch (err) { $("#dados").innerHTML = "⚠️ Ainda não consegui ler: " + esc(dicaArquivo(err)); }
     });
     return _petInput;
   }
@@ -416,6 +422,7 @@
   }
 
   $("#btnDetectar").addEventListener("click", function () { if (state.arqs) autoDetectar(state.arqs); else det("Carregue a pasta do cliente primeiro."); });
+  { const lm = document.getElementById("linkManual"); if (lm) lm.addEventListener("click", function (e) { e.preventDefault(); $("#painel").classList.remove("hidden"); petManualInput().click(); }); }
 
   function metric(n, l) { return '<div class="metric"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>'; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
