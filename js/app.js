@@ -16,7 +16,7 @@
     // aceita .docx E .doc — o Windows/servidor às vezes devolve o NOME CURTO 8.3
     // (ex.: "1PETIO~1.DOC"), que trunca ".docx" em ".DOC" mas é um .docx de verdade.
     const isWord = f => /\.docx?$/.test(low(f));
-    const nomePeticao = f => /peti|inicial/.test(low(f));
+    const nomePeticao = f => /peti|inicial|rubrica/.test(low(f));  // "rubrica" = kit NG
     const naoSocio = f => low(f).indexOf("ocio") < 0;
     const naoExcl = f => !excl.some(x => low(f).indexOf(x) >= 0);
     const pdf = pats => arr.find(f => low(f).endsWith(".pdf") && pats.some(p => low(f).indexOf(p) >= 0));
@@ -33,14 +33,16 @@
       || arr.find(f => isWord(f) && naoSocio(f));
     const xlsx = arr.find(f => low(f).endsWith(".xlsx"));
     const extrato = pdf(["extrato", "fatura"]) || pdf(["06"]);
-    const docs = pdf(["pessoa", "pessoais"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("04") >= 0);
+    // kit LEX: "04. KIT DOC PESSOAIS"; kit NG: "4. DOCUMENTO DE IDENTIDADE"
+    const docs = pdf(["pessoa", "pessoais", "identidade"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("04") >= 0);
     const procuracao = pdf(["proc"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("02") >= 0);
-    const validacao = pdf(["valida"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("05") >= 0);
+    // kit LEX: "05. KIT DOC VALIDAÇÃO"; kit NG: "2.1 RELATÓRIO DE CONFORMIDADE" / "2.2 ICP BRA"
+    const validacao = pdf(["valida", "conformidade", "icp bra", "icp-bra", "icpbra"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("05") >= 0);
     const jus = pdf(["jus", "hipossufi"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("03") >= 0);
     const socio = arr.find(f => isWord(f) && low(f).indexOf("ocio") >= 0);
-    // documentos que podem conter o endereço com número
+    // documentos que podem conter o endereço com número (inclui "vida e residência" do kit NG)
     const residencia = arr.filter(f => low(f).endsWith(".pdf") && f !== extrato &&
-      (/proc|jus|residenc|comprovante|declara|pessoa|fatura/.test(low(f))));
+      (/proc|jus|residenc|comprovante|declara|pessoa|identidade|fatura/.test(low(f))));
     [docs, procuracao].forEach(f => { if (f && residencia.indexOf(f) < 0) residencia.unshift(f); });
     // kits obrigatórios (socioeconômico é o único opcional)
     const OBRIG = [["Petição", peticao], ["Tabela de descontos", xlsx], ["Extrato/Faturas", extrato],

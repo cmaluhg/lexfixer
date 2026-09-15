@@ -17,11 +17,12 @@ def descobrir_arquivos(pasta):
                     continue
                 return f
         return None
-    peticao = achar(["1. PETI*.docx", "*PETI*.docx", "*.docx"],
-                     excluir=["backup", "original", "ajustada", "manual"])
+    peticao = achar(["1. PETI*.docx", "*PETI*.docx", "*RUBRICA*.docx", "*.docx"],
+                    excluir=["backup", "original", "ajustada", "manual", "corrigida", "ocio"])
     xlsx = achar(["TABELA*.xlsx", "*.xlsx"])
-    extrato = achar(["*EXTRATO*.pdf", "06*.pdf"])
-    docs = achar(["*DOC*PESSOA*.pdf", "*PESSOA*.pdf", "04*.pdf"])
+    extrato = achar(["*EXTRATO*.pdf", "06*.pdf", "6.*EXTRATO*.pdf"])
+    # kit LEX: "DOC PESSOAIS"; kit NG: "DOCUMENTO DE IDENTIDADE"
+    docs = achar(["*DOC*PESSOA*.pdf", "*PESSOA*.pdf", "*IDENTIDADE*.pdf", "04*.pdf", "4.*IDENTIDADE*.pdf"])
     return {"peticao": peticao, "xlsx": xlsx, "extrato": extrato, "docs": docs}
 
 
