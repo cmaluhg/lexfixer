@@ -16,9 +16,12 @@
   <div class="card">
     <h2><span class="step">1</span>Selecione a pasta do cliente</h2>
     <div class="filepick">
+      <button id="btnAbrirPasta" class="gold" type="button" style="font-size:16px">📁 Abrir a pasta do cliente</button>
+      <p class="hint" style="margin-top:8px"><b>Recomendado — lê direto do servidor de rede</b> (Chrome/Edge). Escolha a pasta do cliente e permita o acesso.</p>
+      <p class="hint" style="margin-top:14px;border-top:1px solid #e5e7eb;padding-top:12px">Ou selecione pelo navegador de arquivos:</p>
       <input type="file" id="folder" webkitdirectory directory multiple>
-      <p class="hint">Selecione a pasta com a petição (.docx), a tabela (.xlsx), o extrato (.pdf), o kit de documentos (.pdf) e o socioeconômico (.docx).</p>
-      <p class="hint" style="margin-top:8px">Pasta num servidor de rede e deu erro de leitura? <a href="#" id="linkManual">Selecione os arquivos manualmente</a> (abra a pasta e Ctrl+A).</p>
+      <p class="hint">Petição (.docx), tabela (.xlsx), extrato (.pdf), kit de documentos (.pdf) e socioeconômico (.docx).</p>
+      <p class="hint" style="margin-top:8px">Deu erro de leitura? <a href="#" id="linkManual">Selecione os arquivos manualmente</a> (abra a pasta e Ctrl+A).</p>
     </div>
     <div id="arquivos" class="kv" style="margin-top:12px"></div>
   </div>
@@ -68,7 +71,7 @@
   </div>
 </main>
 
-<footer>LexFixer · roda 100% no navegador · consulte o Manual do escritório para as regras completas. · <span id="versao">v2026.07.31-15</span></footer>
+<footer>LexFixer · roda 100% no navegador · consulte o Manual do escritório para as regras completas. · <span id="versao">v2026.07.31-16</span></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -78,7 +81,7 @@
   if (window['pdfjsLib']) window['pdfjsLib'].GlobalWorkerOptions.workerSrc =
     'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 </script>
-<script src="js/engine.js?v=2026.07.31-15"></script>
-<script src="js/app.js?v=2026.07.31-15"></script>
+<script src="js/engine.js?v=2026.07.31-16"></script>
+<script src="js/app.js?v=2026.07.31-16"></script>
 </body>
 </html>

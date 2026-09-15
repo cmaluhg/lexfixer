@@ -112,22 +112,63 @@
     $("#arquivos").innerHTML = h;
   }
 
-  $("#folder").addEventListener("change", async function (e) {
-    const files = e.target.files; if (!files || !files.length) return;
+  // Processa um conjunto de arquivos (de qualquer origem: pasta, seleção manual
+  // ou showDirectoryPicker). Identifica os kits, lê a petição e segue.
+  async function processarArquivos(files) {
     const arqs = identificar(files);
     mostrarArquivos(arqs);
-    if (!arqs.peticao) { alert("Não encontrei a petição (.docx) na pasta."); return; }
-    $("#dados").innerHTML = "Lendo arquivos…";
     $("#painel").classList.remove("hidden");
-    state.arqs = arqs;   // guarda para a leitura manual reaproveitar os kits
-    try {
-      await carregarPeticao(arqs.peticao);
-    } catch (err) {
-      mostrarFalhaPeticao(err);
+    if (!arqs.peticao) {
+      const nomes = Array.from(files).map(f => f.name).join(", ");
+      $("#dados").innerHTML =
+        "⚠️ Não encontrei a <b>petição (.docx)</b> entre os " + files.length + " arquivo(s):<br>" +
+        "<span class='hint'>" + esc(nomes) + "</span><br><br>" +
+        "Selecione também o <b>.docx da petição</b> (ou a pasta inteira).";
       return;
     }
+    state.arqs = arqs;
+    $("#dados").innerHTML = "Lendo arquivos…";
+    try { await carregarPeticao(arqs.peticao); }
+    catch (err) { mostrarFalhaPeticao(err); return; }
     await continuarAposPeticao();
+  }
+
+  $("#folder").addEventListener("change", async function (e) {
+    const files = e.target.files; if (!files || !files.length) return;
+    await processarArquivos(files);
   });
+
+  // Leitura direta do servidor de rede via File System Access API (Chrome/Edge):
+  // getFile() devolve o conteúdo ATUAL de cada arquivo, sem a "foto" que falha em rede.
+  async function abrirPastaServidor() {
+    if (!window.showDirectoryPicker) {
+      alert("Seu navegador não tem esse recurso (use Chrome ou Edge). Vou abrir a seleção manual de arquivos.");
+      petManualInput().click();
+      return;
+    }
+    let dir;
+    try { dir = await window.showDirectoryPicker({ mode: "read" }); }
+    catch (e) {
+      if (e && e.name === "AbortError") return;  // usuário cancelou
+      // bloqueado por política/segurança -> cai na seleção manual de arquivos
+      alert("Não consegui abrir a pasta por aqui (" + ((e && e.name) || "erro") + "). Vou abrir a seleção manual de arquivos.");
+      petManualInput().click();
+      return;
+    }
+    $("#painel").classList.remove("hidden");
+    $("#dados").innerHTML = "Lendo a pasta do servidor…";
+    const files = [];
+    try {
+      for await (const entry of dir.values()) {
+        if (entry.kind === "file") {
+          try { files.push(await entry.getFile()); } catch (e) { /* pula arquivo ilegível */ }
+        }
+      }
+    } catch (e) { $("#dados").innerHTML = "⚠️ Não consegui listar a pasta: " + esc((e && e.message) || e); return; }
+    if (!files.length) { $("#dados").innerHTML = "⚠️ A pasta parece vazia ou sem permissão de leitura."; return; }
+    await processarArquivos(files);
+  }
+  { const bp = document.getElementById("btnAbrirPasta"); if (bp) bp.addEventListener("click", abrirPastaServidor); }
 
   // dica quando o navegador perde a referência do arquivo (nuvem/rede/aberto)
   function dicaArquivo(e) {
@@ -169,22 +210,7 @@
     _petInput.addEventListener("change", async function () {
       const files = this.files; if (!files || !files.length) return;
       $("#dados").innerHTML = "Lendo os arquivos selecionados…";
-      try {
-        const arqs = identificar(files);
-        mostrarArquivos(arqs);
-        if (!arqs.peticao) {
-          const nomes = Array.from(files).map(f => f.name).join(", ");
-          $("#dados").innerHTML =
-            "⚠️ Não encontrei a <b>petição (.docx)</b> entre os " + files.length + " arquivo(s) selecionado(s):<br>" +
-            "<span class='hint'>" + esc(nomes) + "</span><br><br>" +
-            "Selecione também o <b>.docx da petição</b> (ou abra a pasta e marque tudo com <b>Ctrl+A</b>). " +
-            "Dica: no seletor, confira se o filtro está em <b>“Todos os arquivos”</b>.";
-          return;
-        }
-        state.arqs = arqs;
-        await carregarPeticao(arqs.peticao);
-        await continuarAposPeticao();
-      } catch (err) { $("#dados").innerHTML = "⚠️ Ainda não consegui ler: " + esc(dicaArquivo(err)); }
+      await processarArquivos(files);
     });
     return _petInput;
   }
