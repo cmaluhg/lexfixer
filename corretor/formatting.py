@@ -26,16 +26,17 @@ def _is_heading(text):
     return bool(t) and len(t) < 140 and re.match(r'^\d+(\.\d+)*\.?\s+[A-ZÀ-Ú"“]', t)
 
 
+_LINE_AUTO = re.compile(r'w:line="\d+" w:lineRule="auto"')
+
+
 def espacamento_115(document_xml, styles_xml=None):
-    document_xml = document_xml.replace('w:line="240" w:lineRule="auto"',
-                                        'w:line="276" w:lineRule="auto"')
-    # também parágrafos sem line explícito ganham 276 quando têm só after=0
+    # normaliza QUALQUER espaçamento entre linhas (240=1,0; 360=1,5; 259; etc.) para 276=1,15
+    document_xml = _LINE_AUTO.sub('w:line="276" w:lineRule="auto"', document_xml)
+    # parágrafos sem line explícito (só after=0) também ganham 276
     document_xml = document_xml.replace('<w:spacing w:after="0"/>',
                                         '<w:spacing w:after="0" w:line="276" w:lineRule="auto"/>')
     if styles_xml is not None:
-        for v in ('360', '259', '240'):
-            styles_xml = styles_xml.replace('w:line="%s" w:lineRule="auto"' % v,
-                                            'w:line="276" w:lineRule="auto"')
+        styles_xml = _LINE_AUTO.sub('w:line="276" w:lineRule="auto"', styles_xml)
     return document_xml, styles_xml
 
 

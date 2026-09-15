@@ -439,9 +439,11 @@
 
   /* ------------------------- formatação ------------------------- */
   function espac115(doc, styles) {
-    doc = doc.split('w:line="240" w:lineRule="auto"').join('w:line="276" w:lineRule="auto"')
+    // normaliza QUALQUER espaçamento entre linhas para 276 (=1,15) — documento e estilos
+    const rx = /w:line="\d+" w:lineRule="auto"/g;
+    doc = doc.replace(rx, 'w:line="276" w:lineRule="auto"')
       .split('<w:spacing w:after="0"/>').join('<w:spacing w:after="0" w:line="276" w:lineRule="auto"/>');
-    if (styles) for (const v of ["360", "259", "240"]) styles = styles.split('w:line="' + v + '" w:lineRule="auto"').join('w:line="276" w:lineRule="auto"');
+    if (styles) styles = styles.replace(rx, 'w:line="276" w:lineRule="auto"');
     return [doc, styles];
   }
   function centralizarTabelas(xml) {
