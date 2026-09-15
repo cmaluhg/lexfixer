@@ -198,6 +198,19 @@ def a_formatacao():
     doct = _doc(_p("a")) .replace("</w:body>", tbl + "</w:body>")
     check('<w:jc w:val="center"/>' in formatting.centralizar_tabelas(doct), "tabela centralizada (jc center)")
     check("<w:cantSplit/>" in formatting.tabelas_inteiras(doct), "linha de tabela com cantSplit")
+    # REGRESSÃO (caso Maria Auxiliadora): colapsar_vazios NÃO pode apagar o parágrafo
+    # vazio de uma célula — deixaria a célula sem <w:p> (obrigatório) e CORROMPE o .docx.
+    cel = '<w:tc><w:tcPr><w:tcW w:w="800" w:type="dxa"/></w:tcPr><w:p><w:pPr/></w:p></w:tc>'
+    tbl_vazia = '<w:tbl><w:tblPr/><w:tr>' + cel + cel + '</w:tr></w:tbl>'
+    docx_tbl = _doc(_p("antes"), _p(""), _p("")).replace("</w:body>", tbl_vazia + "</w:body>")
+    outc = formatting.colapsar_vazios(docx_tbl, 1)
+    tblout = re.search(r"<w:tbl>.*?</w:tbl>", outc, re.S).group(0)
+    check(tblout.count("<w:p>") + tblout.count("<w:p ") == 2, "célula de tabela mantém seu parágrafo (não corrompe)")
+    check("<w:tc><w:tcPr><w:tcW w:w=\"800\" w:type=\"dxa\"/></w:tcPr></w:tc>" not in outc, "nenhuma célula fica vazia (sem <w:p>)")
+    # e os vazios do CORPO seguem colapsando
+    n_corpo = len([p for p in re.findall(r"<w:p\b[^>]*>.*?</w:p>", outc.split("<w:tbl>")[0], re.S)
+                   if "".join(re.findall(r"<w:t[^>]*>([^<]*)</w:t>", p)).strip() == ""])
+    check(n_corpo == 1, "vazios do corpo ainda colapsam (buraco antes do MÉRITO)")
 
 
 def a_pipeline_xml():

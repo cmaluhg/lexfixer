@@ -486,7 +486,9 @@
     const re = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g; let m; let out = ""; let last = 0; let run = 0;
     while ((m = re.exec(xml))) {
       const gap = xml.slice(last, m.index); last = m.index + m[0].length;
-      if (gap.indexOf("<w:tbl") >= 0 || /<w:p\b/.test(gap)) run = 0;
+      // qualquer conteúdo entre parágrafos (fim de célula </w:tc>, tabela, etc.) quebra
+      // a sequência — senão apagaríamos o parágrafo obrigatório de uma célula (corrompe o docx)
+      if (gap.trim()) run = 0;
       out += gap;
       const pt = m[0];
       const txt = (pt.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || []).map(r => r.replace(/<w:t[^>]*>/, "").replace("</w:t>", "")).join("");

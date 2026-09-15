@@ -111,7 +111,11 @@ def colapsar_vazios(xml, maximo=1):
     for m in blocks:
         gap = xml[last:m.start()]
         last = m.end()
-        if '<w:tbl' in gap or re.search(r'<w:p\b', gap):
+        # Qualquer conteúdo entre dois parágrafos (fim de célula </w:tc>, linha, tabela,
+        # etc.) QUEBRA a sequência de vazios. Sem isso, o vazio de uma célula seria
+        # contado junto com o de outra e APAGADO — deixando a célula sem parágrafo
+        # (obrigatório em OOXML) e corrompendo o .docx.
+        if gap.strip():
             run = 0
         out.append(gap)
         pt = m.group(0)
