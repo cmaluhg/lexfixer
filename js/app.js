@@ -114,16 +114,24 @@
 
   // Processa um conjunto de arquivos (de qualquer origem: pasta, seleção manual
   // ou showDirectoryPicker). Identifica os kits, lê a petição e segue.
-  async function processarArquivos(files) {
+  async function processarArquivos(files, ignorados) {
     const arqs = identificar(files);
     mostrarArquivos(arqs);
     $("#painel").classList.remove("hidden");
     if (!arqs.peticao) {
-      const nomes = Array.from(files).map(f => f.name).join(", ");
-      $("#dados").innerHTML =
-        "⚠️ Não encontrei a <b>petição (.docx)</b> entre os " + files.length + " arquivo(s):<br>" +
-        "<span class='hint'>" + esc(nomes) + "</span><br><br>" +
-        "Selecione também o <b>.docx da petição</b> (ou a pasta inteira).";
+      const nomes = Array.from(files).map(f => f.name).join(", ") || "(nenhum)";
+      let msg = "⚠️ Não encontrei a <b>petição (.docx)</b> entre os " + files.length + " arquivo(s) lidos:<br>" +
+        "<span class='hint'>" + esc(nomes) + "</span>";
+      if (ignorados && ignorados.length) {
+        msg += "<br><br>⚠️ <b>Não consegui abrir " + ignorados.length + " arquivo(s)</b> (podem estar sincronizando ou em uso no servidor): " +
+          "<span class='hint'>" + esc(ignorados.join(", ")) + "</span>.<br>" +
+          "Se a petição está aí, <b>aguarde alguns segundos e clique de novo em “Abrir a pasta”</b>, ou selecione o .docx direto:";
+      } else {
+        msg += "<br><br>Selecione também o <b>.docx da petição</b> (ou a pasta inteira):";
+      }
+      msg += "<div style='margin-top:8px'><button id='btnPetManual' class='dl'>📄 Selecionar a petição (.docx) manualmente</button></div>";
+      $("#dados").innerHTML = msg;
+      const b = document.getElementById("btnPetManual"); if (b) b.addEventListener("click", () => petManualInput().click());
       return;
     }
     state.arqs = arqs;
@@ -157,16 +165,35 @@
     }
     $("#painel").classList.remove("hidden");
     $("#dados").innerHTML = "Lendo a pasta do servidor…";
-    const files = [];
-    try {
-      for await (const entry of dir.values()) {
-        if (entry.kind === "file") {
-          try { files.push(await entry.getFile()); } catch (e) { /* pula arquivo ilegível */ }
-        }
-      }
-    } catch (e) { $("#dados").innerHTML = "⚠️ Não consegui listar a pasta: " + esc((e && e.message) || e); return; }
-    if (!files.length) { $("#dados").innerHTML = "⚠️ A pasta parece vazia ou sem permissão de leitura."; return; }
-    await processarArquivos(files);
+    // coleta os handles de arquivo
+    const entries = [];
+    try { for await (const entry of dir.values()) if (entry.kind === "file") entries.push(entry); }
+    catch (e) { $("#dados").innerHTML = "⚠️ Não consegui listar a pasta: " + esc((e && e.message) || e); return; }
+    if (!entries.length) { $("#dados").innerHTML = "⚠️ A pasta parece vazia ou sem permissão de leitura."; return; }
+    // 1ª passada
+    const files = []; let falhas = [];
+    $("#dados").innerHTML = "Lendo " + entries.length + " arquivo(s) do servidor…";
+    for (const e of entries) { try { files.push(await getFileRetry(e)); } catch (_) { falhas.push(e); } }
+    // arquivos recém-gravados podem estar sincronizando: espera e retenta (sem reabrir a pasta)
+    for (let round = 0; round < 3 && falhas.length; round++) {
+      $("#dados").innerHTML = "⏳ Aguardando " + falhas.length + " arquivo(s) do servidor sincronizar… (tentativa " + (round + 1) + ")";
+      await new Promise(r => setTimeout(r, 2500));
+      const aindaFalha = [];
+      for (const e of falhas) { try { files.push(await e.getFile()); } catch (_) { aindaFalha.push(e); } }
+      falhas = aindaFalha;
+    }
+    await processarArquivos(files, falhas.map(e => e.name));
+  }
+  // getFile() pode falhar em rede quando o arquivo está sendo sincronizado/gravado;
+  // tenta algumas vezes antes de desistir.
+  async function getFileRetry(handle) {
+    let ult;
+    for (let i = 0; i < 4; i++) {
+      if (i) await new Promise(r => setTimeout(r, 600 * i));
+      try { return await handle.getFile(); }
+      catch (e) { ult = e; }
+    }
+    throw ult;
   }
   { const bp = document.getElementById("btnAbrirPasta"); if (bp) bp.addEventListener("click", abrirPastaServidor); }
 
