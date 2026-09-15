@@ -13,9 +13,16 @@
     });
     const excl = ["backup", "original", "ajustada", "corrigida", "manual"];
     const isDocx = f => low(f).endsWith(".docx");
+    const naoSocio = f => low(f).indexOf("ocio") < 0;
+    const naoExcl = f => !excl.some(x => low(f).indexOf(x) >= 0);
     const pdf = pats => arr.find(f => low(f).endsWith(".pdf") && pats.some(p => low(f).indexOf(p) >= 0));
-    const peticao = arr.find(f => isDocx(f) && (low(f).indexOf("peti") >= 0) && !excl.some(x => low(f).indexOf(x) >= 0))
-      || arr.find(f => isDocx(f) && low(f).indexOf("ocio") < 0 && !excl.some(x => low(f).indexOf(x) >= 0));
+    const peticao =
+      // 1) .docx com "petição"/"inicial" no nome, que não seja socio nem backup/corrigida
+      arr.find(f => isDocx(f) && (low(f).indexOf("peti") >= 0 || low(f).indexOf("inicial") >= 0) && naoSocio(f) && naoExcl(f))
+      // 2) qualquer .docx que não seja socio nem backup/corrigida
+      || arr.find(f => isDocx(f) && naoSocio(f) && naoExcl(f))
+      // 3) último recurso: qualquer .docx que não seja o socioeconômico
+      || arr.find(f => isDocx(f) && naoSocio(f));
     const xlsx = arr.find(f => low(f).endsWith(".xlsx"));
     const extrato = pdf(["extrato", "fatura"]) || pdf(["06"]);
     const docs = pdf(["pessoa", "pessoais"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("04") >= 0);
@@ -89,23 +96,26 @@
     return imgs;
   }
 
-  $("#folder").addEventListener("change", async function (e) {
-    const files = e.target.files; if (!files || !files.length) return;
-    const arqs = identificar(files);
+  function mostrarArquivos(arqs) {
     const ok = v => v ? "✅ " + v.name : "—";
-    $("#arquivos").innerHTML =
+    let h =
       "<b>Petição:</b> " + ok(arqs.peticao) + "<br>" +
       "<b>Tabela:</b> " + ok(arqs.xlsx) + " · <b>Extrato/Faturas:</b> " + ok(arqs.extrato) + "<br>" +
       "<b>Documentos (RG/CNH):</b> " + ok(arqs.docs) + " · <b>Procuração:</b> " + ok(arqs.procuracao) + "<br>" +
       "<b>KIT Validação:</b> " + ok(arqs.validacao) + " · <b>JUS (hipossuficiência):</b> " + ok(arqs.jus) + "<br>" +
       "<b>Socioeconômico:</b> " + (arqs.socio ? "✅ " + arqs.socio.name : "— (opcional)");
-    // AVISO de kit obrigatório faltando -> retornar ao documento de origem
     if (arqs.faltando && arqs.faltando.length) {
-      $("#arquivos").innerHTML +=
-        '<div class="warn-box" style="background:#fdecea;border:1px solid #f5b7b1;color:#7b1a13;margin-top:12px">' +
+      h += '<div class="warn-box" style="background:#fdecea;border:1px solid #f5b7b1;color:#7b1a13;margin-top:12px">' +
         '⚠️ <b>Documento obrigatório faltando:</b> ' + arqs.faltando.join(", ") +
         '. <b>Retorne ao documento de origem (ORG DOC)</b> e anexe o(s) kit(s) antes de gerar a peça.</div>';
     }
+    $("#arquivos").innerHTML = h;
+  }
+
+  $("#folder").addEventListener("change", async function (e) {
+    const files = e.target.files; if (!files || !files.length) return;
+    const arqs = identificar(files);
+    mostrarArquivos(arqs);
     if (!arqs.peticao) { alert("Não encontrei a petição (.docx) na pasta."); return; }
     $("#dados").innerHTML = "Lendo arquivos…";
     $("#painel").classList.remove("hidden");
@@ -161,7 +171,16 @@
       $("#dados").innerHTML = "Lendo os arquivos selecionados…";
       try {
         const arqs = identificar(files);
-        if (!arqs.peticao) { $("#dados").innerHTML = "⚠️ Não encontrei a <b>petição (.docx)</b> entre os arquivos selecionados. Selecione a pasta inteira (Ctrl+A)."; return; }
+        mostrarArquivos(arqs);
+        if (!arqs.peticao) {
+          const nomes = Array.from(files).map(f => f.name).join(", ");
+          $("#dados").innerHTML =
+            "⚠️ Não encontrei a <b>petição (.docx)</b> entre os " + files.length + " arquivo(s) selecionado(s):<br>" +
+            "<span class='hint'>" + esc(nomes) + "</span><br><br>" +
+            "Selecione também o <b>.docx da petição</b> (ou abra a pasta e marque tudo com <b>Ctrl+A</b>). " +
+            "Dica: no seletor, confira se o filtro está em <b>“Todos os arquivos”</b>.";
+          return;
+        }
         state.arqs = arqs;
         await carregarPeticao(arqs.peticao);
         await continuarAposPeticao();
