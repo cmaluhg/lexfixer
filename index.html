@@ -15,13 +15,18 @@
 <main>
   <div class="card">
     <h2><span class="step">1</span>Selecione a pasta do cliente</h2>
+    <div class="warn-box" style="text-align:left;margin-bottom:14px">
+      💡 <b>Recomendado — copie a pasta para o seu PC antes:</b> copie a pasta do cliente (do servidor) para uma pasta local, ex.: <b>C:\Temp</b>, e selecione essa <b>cópia local</b> abaixo.<br>
+      Ler direto do servidor de rede costuma falhar — arquivos grandes ou recém-salvos ficam "presos" na sincronização e o navegador não consegue abri-los.
+    </div>
     <div class="filepick">
-      <button id="btnAbrirPasta" class="gold" type="button" style="font-size:16px">📁 Abrir a pasta do cliente</button>
-      <p class="hint" style="margin-top:8px"><b>Recomendado — lê direto do servidor de rede</b> (Chrome/Edge). Escolha a pasta do cliente e permita o acesso.</p>
-      <p class="hint" style="margin-top:14px;border-top:1px solid #e5e7eb;padding-top:12px">Ou selecione pelo navegador de arquivos:</p>
       <input type="file" id="folder" webkitdirectory directory multiple>
-      <p class="hint">Petição (.docx), tabela (.xlsx), extrato (.pdf), kit de documentos (.pdf) e socioeconômico (.docx).</p>
-      <p class="hint" style="margin-top:8px">Deu erro de leitura? <a href="#" id="linkManual">Selecione os arquivos manualmente</a> (abra a pasta e Ctrl+A).</p>
+      <p class="hint">Selecione a pasta (de preferência a <b>cópia local</b>) com a petição (.docx), a tabela (.xlsx), o extrato (.pdf), o kit de documentos (.pdf) e o socioeconômico (.docx).</p>
+      <p class="hint" style="margin-top:12px;border-top:1px solid #e5e7eb;padding-top:12px">
+        Alternativas (podem falhar no servidor de rede):
+        <button id="btnAbrirPasta" type="button" style="padding:6px 12px;font-size:13px">📁 Abrir a pasta do servidor</button>
+        <a href="#" id="linkManual">selecionar arquivos manualmente</a> (abra a pasta e Ctrl+A).
+      </p>
     </div>
     <div id="arquivos" class="kv" style="margin-top:12px"></div>
   </div>
@@ -71,7 +76,7 @@
   </div>
 </main>
 
-<footer>LexFixer · roda 100% no navegador · consulte o Manual do escritório para as regras completas. · <span id="versao">v2026.07.31-18</span></footer>
+<footer>LexFixer · roda 100% no navegador · consulte o Manual do escritório para as regras completas. · <span id="versao">v2026.07.31-19</span></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -81,7 +86,7 @@
   if (window['pdfjsLib']) window['pdfjsLib'].GlobalWorkerOptions.workerSrc =
     'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 </script>
-<script src="js/engine.js?v=2026.07.31-18"></script>
-<script src="js/app.js?v=2026.07.31-18"></script>
+<script src="js/engine.js?v=2026.07.31-19"></script>
+<script src="js/app.js?v=2026.07.31-19"></script>
 </body>
 </html>
