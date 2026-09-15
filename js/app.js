@@ -53,13 +53,36 @@
   // Lê os bytes com 1 retentativa — cobre OneDrive/rede que hidrata o arquivo
   // sob demanda (erro "could not be found at the time an operation was processed").
   async function lerBytes(file) {
-    const esperas = [700, 1600, 3000];  // dá tempo do OneDrive baixar arquivo grande
+    // 1) leitura direta com retentativa
+    const esperas = [500, 1200, 2500];
     let ultimo;
     for (let tent = 0; tent <= esperas.length; tent++) {
       try { return await file.arrayBuffer(); }
       catch (e) { ultimo = e; if (tent < esperas.length) await new Promise(r => setTimeout(r, esperas[tent])); }
     }
-    throw ultimo;
+    // 2) fallback: leitura em PEDAÇOS — muito mais tolerante para arquivo grande em rede
+    try { return await lerBytesPedacos(file); }
+    catch (e) { throw ultimo || e; }
+  }
+  // lê o arquivo em blocos de 256 KB, cada bloco com retentativa; um bloco pequeno
+  // passa na rede onde a leitura inteira (ex.: 3,3 MB) falha.
+  async function lerBytesPedacos(file, tam) {
+    tam = tam || 262144;
+    const partes = [];
+    for (let off = 0; off < file.size; off += tam) {
+      const bloco = file.slice(off, Math.min(off + tam, file.size));
+      let buf = null, err = null;
+      for (let i = 0; i < 5; i++) {
+        try { buf = await bloco.arrayBuffer(); err = null; break; }
+        catch (e) { err = e; await new Promise(r => setTimeout(r, 250 * (i + 1))); }
+      }
+      if (err) throw err;
+      partes.push(new Uint8Array(buf));
+    }
+    const total = partes.reduce((n, p) => n + p.length, 0);
+    const out = new Uint8Array(total); let pos = 0;
+    for (const p of partes) { out.set(p, pos); pos += p.length; }
+    return out.buffer;
   }
   async function lerDocxPartes(file) {
     const zip = await JSZip.loadAsync(await lerBytes(file));
@@ -505,6 +528,7 @@
 
   $("#btnDetectar").addEventListener("click", function () { if (state.arqs) autoDetectar(state.arqs); else det("Carregue a pasta do cliente primeiro."); });
   { const lm = document.getElementById("linkManual"); if (lm) lm.addEventListener("click", function (e) { e.preventDefault(); $("#painel").classList.remove("hidden"); petManualInput().click(); }); }
+  { const bs = document.getElementById("btnSelArquivos"); if (bs) bs.addEventListener("click", function () { petManualInput().click(); }); }
 
   function metric(n, l) { return '<div class="metric"><div class="n">' + n + '</div><div class="l">' + l + '</div></div>'; }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
