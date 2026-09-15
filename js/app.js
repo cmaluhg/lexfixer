@@ -12,24 +12,32 @@
       return !n.startsWith("~$") && !n.startsWith(".") && !/^~\$|\.tmp$/i.test(n);
     });
     const excl = ["backup", "original", "ajustada", "corrigida", "manual"];
-    const isDocx = f => low(f).endsWith(".docx");
+    const isDocxExact = f => low(f).endsWith(".docx");
+    // aceita .docx E .doc — o Windows/servidor às vezes devolve o NOME CURTO 8.3
+    // (ex.: "1PETIO~1.DOC"), que trunca ".docx" em ".DOC" mas é um .docx de verdade.
+    const isWord = f => /\.docx?$/.test(low(f));
+    const nomePeticao = f => /peti|inicial/.test(low(f));
     const naoSocio = f => low(f).indexOf("ocio") < 0;
     const naoExcl = f => !excl.some(x => low(f).indexOf(x) >= 0);
     const pdf = pats => arr.find(f => low(f).endsWith(".pdf") && pats.some(p => low(f).indexOf(p) >= 0));
     const peticao =
-      // 1) .docx com "petição"/"inicial" no nome, que não seja socio nem backup/corrigida
-      arr.find(f => isDocx(f) && (low(f).indexOf("peti") >= 0 || low(f).indexOf("inicial") >= 0) && naoSocio(f) && naoExcl(f))
+      // 1) .docx com "petição"/"inicial", que não seja socio nem backup/corrigida
+      arr.find(f => isDocxExact(f) && nomePeticao(f) && naoSocio(f) && naoExcl(f))
       // 2) qualquer .docx que não seja socio nem backup/corrigida
-      || arr.find(f => isDocx(f) && naoSocio(f) && naoExcl(f))
-      // 3) último recurso: qualquer .docx que não seja o socioeconômico
-      || arr.find(f => isDocx(f) && naoSocio(f));
+      || arr.find(f => isDocxExact(f) && naoSocio(f) && naoExcl(f))
+      // 3) .doc (nome curto do Windows) com "petição"/"inicial"
+      || arr.find(f => isWord(f) && nomePeticao(f) && naoSocio(f) && naoExcl(f))
+      // 4) qualquer Word (.doc/.docx) que não seja socio nem backup/corrigida
+      || arr.find(f => isWord(f) && naoSocio(f) && naoExcl(f))
+      // 5) último recurso: qualquer Word que não seja o socioeconômico
+      || arr.find(f => isWord(f) && naoSocio(f));
     const xlsx = arr.find(f => low(f).endsWith(".xlsx"));
     const extrato = pdf(["extrato", "fatura"]) || pdf(["06"]);
     const docs = pdf(["pessoa", "pessoais"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("04") >= 0);
     const procuracao = pdf(["proc"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("02") >= 0);
     const validacao = pdf(["valida"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("05") >= 0);
     const jus = pdf(["jus", "hipossufi"]) || arr.find(f => low(f).endsWith(".pdf") && low(f).indexOf("03") >= 0);
-    const socio = arr.find(f => isDocx(f) && low(f).indexOf("ocio") >= 0);
+    const socio = arr.find(f => isWord(f) && low(f).indexOf("ocio") >= 0);
     // documentos que podem conter o endereço com número
     const residencia = arr.filter(f => low(f).endsWith(".pdf") && f !== extrato &&
       (/proc|jus|residenc|comprovante|declara|pessoa|fatura/.test(low(f))));
@@ -55,7 +63,9 @@
   }
   async function lerDocxPartes(file) {
     const zip = await JSZip.loadAsync(await lerBytes(file));
-    const doc = await zip.file("word/document.xml").async("string");
+    const alvo = zip.file("word/document.xml");
+    if (!alvo) throw new Error("Este arquivo não é um .docx válido (talvez seja um .doc antigo). Abra no Word e salve como .docx.");
+    const doc = await alvo.async("string");
     let styles = null;
     if (zip.file("word/styles.xml")) styles = await zip.file("word/styles.xml").async("string");
     return { zip, doc, styles };
@@ -207,7 +217,7 @@
 
   async function carregarPeticao(file) {
     state.peticao = await lerDocxPartes(file);
-    state.peticao.nomeBase = file.name.replace(/\.docx$/i, "");
+    state.peticao.nomeBase = file.name.replace(/\.docx?$/i, "");
     state.peticao.data = LEX.extrairPeticao(LEX.mergeRuns(state.peticao.doc));
   }
 
