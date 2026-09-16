@@ -329,7 +329,7 @@
     let alvoVara = null;
     if (anp) alvoVara = true;
     else if (chk.temExc) alvoVara = true;
-    else if (p.valor_causa != null) alvoVara = p.valor_causa > 64840;
+    else if (p.valor_causa != null) alvoVara = p.valor_causa > (p.escritorio === "NG" ? 64840 : 50000);  // LA: high ticket R$50k; NG: teto
     const ctx = {
       sexo, nascimento: nasc, idade: chk.idade, idoso: chk.idoso,
       numero_endereco: numero, socio_texto: state.socioTexto, alvo_vara_comum: alvoVara,
@@ -376,6 +376,18 @@
     if (audTbl && !audTbl.ok)
       avisos += "<div class='warn-box' style='background:#fdecea;border-color:#e74c3c;color:#922'>⚠️ <b>Tabela incorreta — voltar para Organização de documentos (ORG DOC).</b><br>" +
         audTbl.problemas.map(esc).join("<br>") + "</div>";
+    // Painel de orientação de endereçamento (Luis Albert) — a equipe confere
+    if (p.escritorio !== "NG")
+      avisos += "<div class='warn-box' style='background:#eef4ff;border-color:#a9c3f0;color:#1a3a6b'>" +
+        "📍 <b>Endereçamento — confira as regras do escritório (Luis Albert):</b>" +
+        "<ul style='margin:6px 0 0 18px;padding:0'>" +
+        "<li><b>High ticket</b>: valor da causa <b>&gt; R$ 50.000 → Vara Comum</b>; ≤ R$ 50.000 → JEC (teto do JEC 06/2026 = R$ 64.840, referência).</li>" +
+        "<li><b>Prazo</b>: descontos dos últimos <b>5 anos → priorizar JEC</b>; últimos <b>10 anos → priorizar Vara Comum</b>.</li>" +
+        "<li><b>Exceções ao prazo</b>: <i>parc. cred., bx. ant. finan., título e seguro</i> vão ao <b>JEC</b> mesmo se prescritas (quinquenal).</li>" +
+        "<li><b>IRDR</b>: <i>mora/encargos</i> e <i>cesta de serviços</i> — <b>NUNCA misturar</b> com gastos com crédito, parc. cred. pess. e bx. ant. finan.</li>" +
+        "<li><b>1ª rubrica p/ Vara Comum</b>: sempre <b>gastos com crédito</b>.</li>" +
+        "<li><b>Empate parc. cred. × bx.</b>: mandar a <b>parc. para a comum</b> (permite juntar contratos e perícia).</li>" +
+        "</ul><span class='hint'>A separação das rubricas acontece na Organização de Documentos; o app orienta, a equipe confere.</span></div>";
     $("#warnIdoso").innerHTML = avisos;
     $("#resultado").classList.remove("hidden");
     $("#resultado").scrollIntoView({ behavior: "smooth" });

@@ -10,7 +10,22 @@ import os
 import re
 import unicodedata
 from .extenso import valor_por_extenso
-from . import estrutura, docxio, revisao
+from . import estrutura, docxio, revisao, extract
+
+
+def _ler_socio_texto(pasta):
+    """Lê e limpa o texto do 'socio economico.docx' da pasta (ou '')."""
+    if not pasta:
+        return ""
+    import glob as _g
+    cand = _g.glob(os.path.join(pasta, "*ocio*conomico*.docx")) + _g.glob(os.path.join(pasta, "*ocio*.docx"))
+    if not cand:
+        return ""
+    try:
+        paras = docxio.docx_para_texto(cand[0])
+    except Exception:
+        return ""
+    return _limpar_socio(" ".join(p for p in paras if p.strip()))
 
 
 def _deburr(s):
@@ -20,6 +35,76 @@ def _deburr(s):
 
 # título da seção de gratuidade: começa com numeração ("2.2.") + DO/DA + termo.
 _HDR_NUM = re.compile(r"^\d+(\.\d+)*\.?\s+D[OA]\b")
+
+# ---- Novo tópico de gratuidade (ADC 80) — SÓ Luis Albert. (texto, ind): ind=parte
+#      individual (preenchida pelo socioeconômico; sem socio → "(preencher)" em amarelo). ----
+_GRAT_COMUM = [
+    ("A gratuidade da justiça garante o acesso à Justiça àqueles que não possuem recursos suficientes para arcar com as despesas processuais sem prejuízo de sua subsistência. No caso, a situação econômica da parte Autora evidencia o preenchimento dos requisitos para a concessão do benefício, conforme se demonstra.", False),
+    ("Atualmente, o(a) Autor(a) é (preencher), sendo (único provedor da residência/adequar ao caso concreto), na qual residem (preencher) pessoas, que (dependem integral ou parcialmente/adequar ao caso concreto) de sua renda mensal bruta no valor de R$ (preencher).", True),
+    ("Além disso, a parte Autora arca mensalmente com despesas essenciais, tais como (preencher: água, energia elétrica, alimentação, medicamentos, transporte, internet, despesas com dependentes, empréstimos etc.), de modo que a imposição das despesas processuais comprometeria parcela relevante dos recursos destinados à sua subsistência e à manutenção de seu núcleo familiar.", True),
+    ("Cumpre destacar, ainda, que, em 03 de setembro de 2026, o Supremo Tribunal Federal concluiu o julgamento da Ação Declaratória de Constitucionalidade nº 80 (ADC 80), estabelecendo parâmetros para a concessão da gratuidade da justiça, com extensão aos diversos ramos do Poder Judiciário.", False),
+    ("No referido julgamento, o STF reconheceu que a pessoa natural com renda mensal de até R$ 5.000,00 (cinco mil reais) faz jus à gratuidade da justiça sem necessidade de comprovação adicional da insuficiência de recursos, estabelecendo, assim, parâmetro objetivo para a análise do benefício.", False),
+    ("Tal presunção, contudo, não possui caráter absoluto, podendo ser afastada quando existirem elementos concretos que demonstrem patrimônio ou renda familiar incompatíveis com a concessão do benefício. Na hipótese dos autos, além de a renda da parte Autora encontrar-se dentro do parâmetro fixado pelo STF, não há elementos que evidenciem situação patrimonial ou financeira incompatível com a hipossuficiência alegada, sendo sua realidade econômica corroborada pelas circunstâncias individualizadas acima e pelos documentos anexados à inicial.", False),
+    ("Ressalta-se, ainda, que o Supremo Tribunal Federal conferiu à decisão efeitos ex nunc, estabelecendo que os novos critérios incidem somente sobre os processos ajuizados a partir da publicação da ata do julgamento. Considerando que a presente demanda foi proposta posteriormente ao referido marco temporal, os parâmetros estabelecidos na ADC 80 mostram-se plenamente aplicáveis ao caso.", False),
+    ("Dessa forma, considerando a situação econômica concretamente demonstrada, a renda mensal da parte Autora e seu enquadramento nos parâmetros estabelecidos pelo Supremo Tribunal Federal na ADC 80, pugna-se pela concessão dos benefícios da gratuidade da justiça, nos termos do art. 9º, inciso I, da Constituição do Estado do Amazonas e dos arts. 98 e seguintes do Código de Processo Civil.", False),
+]
+_GRAT_JEC = [
+    ("Ainda que o acesso à Justiça Especial em primeiro grau independa do pagamento de custas, taxas ou despesas por força do art. 54 da lei específica n. 9.099/95, que abrange os Juizados Especiais, cumpre informar que a parte Autora não possui condições de arcar com as custas judiciais (preparo ou qualquer outro ato) sem comprometer severamente seu sustento.", False),
+    ("Atualmente, o(a) autor(a) é (preencher), sendo o único provedor da sua casa (adequar ao caso concreto), na qual reside um total de (preencher) pessoas, que dependem integralmente da sua renda mensal bruta no valor de R$ (preencher).", True),
+    ("Além disso, a parte autora arca com despesas essenciais, tais como (preencher, ex.: água, luz, alimentação, medicamentos, transporte, internet, cuidado de dependentes, empréstimos, etc), de modo que não dispõe de recursos para suportar despesas extras, ainda que processuais, sem prejuízo de sua própria subsistência e de seu núcleo familiar.", True),
+    ("Por fim, cabe destacar que, em 03 de setembro de 2026, o Supremo Tribunal Federal concluiu o julgamento da ADC 80, estabelecendo novos parâmetros para a concessão da gratuidade da justiça, com aplicação aos diversos ramos do Poder Judiciário.", False),
+    ("A decisão reconheceu a presunção relativa de insuficiência de recursos da pessoa natural que aufere renda mensal de até R$ 5.000,00 (cinco mil reais), ressalvada a possibilidade de afastamento da presunção quando o magistrado verificar, no caso concreto, patrimônio ou renda familiar incompatíveis com a alegada hipossuficiência, mediante análise das circunstâncias concretamente demonstradas.", False),
+    ("O STF conferiu à decisão efeitos ex nunc, a contar da publicação da ata do julgamento de mérito, aplicando-se os novos critérios somente às ações ajuizadas a partir desse marco temporal. Considerando que a presente demanda foi proposta posteriormente à publicação da referida ata, mostra-se aplicável ao caso o parâmetro estabelecido na ADC 80.", False),
+    ("Por todo o exposto, pugna-se pela concessão dos benefícios da gratuidade da justiça, à luz dos parâmetros fixados pelo Supremo Tribunal Federal no julgamento da ADC 80, bem como do art. 9º, inciso I, da Constituição do Estado do Amazonas, dos arts. 98 e seguintes do Código de Processo Civil e do art. 54 da Lei nº 9.099/95.", False),
+]
+_HL_RPR = ('<w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="Arial" w:hAnsi="Arial" w:cs="Arial"/>'
+           '<w:sz w:val="24"/><w:szCs w:val="24"/><w:highlight w:val="yellow"/></w:rPr>')
+_HDR_SEC = re.compile(r'^\d+(\.\d+)*\.?\s+[A-ZÀ-Ú"“]')
+
+
+def _esc_xml(s):
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _para_grat(texto, hl):
+    rpr = _HL_RPR if hl else estrutura.RPR
+    return ('<w:p w14:paraId="%s" w14:textId="77777777">%s<w:r>%s<w:t xml:space="preserve">%s</w:t></w:r></w:p>'
+            % (estrutura._npid(), estrutura.PPR_BODY, rpr, _esc_xml(texto)))
+
+
+def _texto_para(tag):
+    return "".join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', tag))
+
+
+def atualizar_gratuidade(xml, comum, socio_texto, log):
+    """Substitui o corpo da seção de gratuidade pelo texto ADC 80 (Comum/JEC). A parte
+    individual é preenchida com o socioeconômico; sem socio, fica '(preencher)' em amarelo."""
+    blocks = [(m.start(), m.end(), m.group(0)) for m in re.finditer(r'<w:p\b[^>]*>.*?</w:p>', xml, flags=re.S)]
+    hi = next((i for i, b in enumerate(blocks) if _eh_hdr_gratuidade(_texto_para(b[2]))), None)
+    if hi is None:
+        log.append("⚠️ Gratuidade (ADC 80) NÃO inserida — seção não encontrada. Inserir manualmente.")
+        return xml
+    nj = next((j for j in range(hi + 1, len(blocks))
+               if _HDR_SEC.match(_texto_para(blocks[j][2]).strip()) and len(_texto_para(blocks[j][2]).strip()) < 140), None)
+    ini = blocks[hi][1]
+    fim = blocks[nj][0] if nj is not None else blocks[hi][1]
+    socio = _limpar_socio(socio_texto) if socio_texto else ""
+    partes = []
+    socio_emitido = False
+    for texto, ind in (_GRAT_COMUM if comum else _GRAT_JEC):
+        if ind:
+            if socio:
+                if not socio_emitido:
+                    partes.append(_para_grat(socio, False))
+                    socio_emitido = True
+            else:
+                partes.append(_para_grat(texto, True))
+        else:
+            partes.append(_para_grat(texto, False))
+    log.append("Tópico de gratuidade (ADC 80) — versão %s%s."
+               % ("JUSTIÇA COMUM" if comum else "JUIZADO/JEC",
+                  " (individualizado pelo socioeconômico)" if socio else " — parte individual em amarelo '(preencher)'"))
+    return xml[:ini] + "".join(partes) + xml[fim:]
 
 
 def _eh_hdr_gratuidade(t):
@@ -261,10 +346,20 @@ def aplicar(xml, ctx, log):
     ctx = {sexo, numero_endereco, idoso, nascimento, idade, pasta,
            alvo_vara_comum, valores}
     """
-    socio_info = {}
+    socio_info = {"pedido": False, "ok": True}
     xml = corrigir_genero_qualificacao(xml, ctx.get("sexo"), log)
     xml = inserir_numero_endereco(xml, ctx.get("numero_endereco"), log)
-    xml = socioeconomico(xml, ctx.get("pasta"), log, socio_info)
+    # Gratuidade: Luis Albert usa o tópico ADC 80 (versão pelo foro, individualizado pelo
+    # socioeconômico); NG mantém o comportamento anterior (parâmetros do NG são outros).
+    _prim = "".join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>',
+                               re.search(r'<w:p\b[^>]*>.*?</w:p>', xml, re.S).group(0)))
+    _comum = bool(ctx.get("alvo_vara_comum")) if ctx.get("alvo_vara_comum") is not None \
+        else ("JUIZADO ESPECIAL" not in _prim.upper())
+    _texto_peca = " ".join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', xml))
+    if extract.detectar_escritorio(_texto_peca) == "LA":
+        xml = atualizar_gratuidade(xml, _comum, _ler_socio_texto(ctx.get("pasta")), log)
+    else:
+        xml = socioeconomico(xml, ctx.get("pasta"), log, socio_info)
     xml = corrigir_dano_moral_extenso(xml, log)
     xml = estrutura.corrigir_extensos(xml, ctx.get("valores") or [], log)
     if ctx.get("alvo_vara_comum") is not None:

@@ -10,6 +10,11 @@ def _deb(s):
                    if unicodedata.category(c) != "Mn").upper()
 
 
+def detectar_escritorio(texto):
+    """'NG' (Nicolas Gomes) ou 'LA' (Luis Albert, padrão)."""
+    return "NG" if re.search(r"NICOLAS\s+GOMES", _deb(texto)) else "LA"
+
+
 def eh_anp(texto):
     """Ausência de Notificação Prévia (ANP): sempre Justiça Comum, independente do valor."""
     return bool(re.search(r"NOTIFICACAO PREVIA|PREVIA NOTIFICACAO|"
@@ -63,6 +68,7 @@ def extrair_peticao(caminho_docx):
     d["endereco_juizado"] = "JUIZADO ESPECIAL" in l1
     d["endereco_vara_comum"] = ("VARA C" in l1 and "JUIZADO" not in l1)
     d["anp"] = eh_anp(texto)  # Ausência de Notificação Prévia → sempre Justiça Comum
+    d["escritorio"] = detectar_escritorio(texto)  # "LA" (Luis Albert) ou "NG" (Nicolas Gomes)
     mcom = re.search(r'COMARCA DE ([A-ZÀ-Ú/ ]+)', l1)
     d["comarca"] = mcom.group(1).strip().rstrip(".") if mcom else ""
 

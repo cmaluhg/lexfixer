@@ -58,7 +58,8 @@ def processar(arqs, op, destino_docx):
     if pet.get("anp") or chk["tem_excecao"] or op.get("forcar_vara_comum"):
         alvo_vara = True
     elif pet.get("valor_causa") is not None:
-        alvo_vara = pet["valor_causa"] > checks.TETO_JUIZADO
+        _corte = checks.TETO_JUIZADO if pet.get("escritorio") == "NG" else checks.HIGH_TICKET
+        alvo_vara = pet["valor_causa"] > _corte  # LA: high ticket R$50k; NG: teto
     else:
         alvo_vara = None
 

@@ -113,6 +113,7 @@
     d.endereco_vara_comum = l1.indexOf("VARA C") >= 0 && l1.indexOf("JUIZADO") < 0;
     // Ausência de Notificação Prévia (ANP): sempre Justiça Comum, independente do valor.
     d.anp = /NOTIFICACAO PREVIA|PREVIA NOTIFICACAO|AUSENCIA DE (PREVIA )?NOTIFICACAO|SEM (PREVIA )?NOTIFICACAO/.test(deburrUp(texto));
+    d.escritorio = detectarEscritorio(texto);  // "LA" (Luis Albert) ou "NG" (Nicolas Gomes)
     let m = l1.match(/COMARCA DE ([A-ZÀ-Ú/ ]+)/); d.comarca = m ? m[1].trim().replace(/\.+$/, "") : "";
     m = texto.match(/RG sob n[ºo]?\s*([\d.\-]+)/); d.rg = m ? m[1].replace(/\D/g, "") : null;
     m = texto.match(/CPF sob o n[ºo]?\s*([\d.\-]+)/); d.cpf = m ? m[1].trim() : null;
@@ -168,7 +169,8 @@
   };
 
   /* ------------------------- checks (12 pontos) ------------------------- */
-  const TETO = 64840.0;
+  const TETO = 64840.0;          // teto do JEC (06/2026) — referência, NÃO é a premissa de separação
+  const HIGH_TICKET = 50000.0;   // separação JEC × Vara Comum: > R$50.000 (valor da causa) = high ticket → comum
   const EXC = ["MORA", "ENCARGOS", "REFINANCIAMENTO", "ANP", "RMC", "RCC"];
   LEX.idadeEm = function (nasc, hoje) {
     if (!nasc) return null;
@@ -189,9 +191,12 @@
       "Ausência de notificação prévia → SEMPRE Vara Cível Comum, independente do valor."));
     else if (temExc) ach.push(F(1, "Endereçamento", pet.endereco_vara_comum ? "OK" : "ATENCAO",
       "Rubrica na EXCEÇÃO (" + excs.join(", ") + ") → Vara Cível Comum. Confirmar com o advogado."));
-    else if (vc != null) { const alvoJ = vc <= TETO; const ok = alvoJ ? pet.endereco_juizado : pet.endereco_vara_comum;
+    else if (vc != null) {
+      const corte = pet.escritorio === "NG" ? TETO : HIGH_TICKET;  // LA: high ticket R$50k; NG: teto JEC
+      const alvoJ = vc <= corte; const ok = alvoJ ? pet.endereco_juizado : pet.endereco_vara_comum;
       ach.push(F(1, "Endereçamento", ok ? "OK" : "CORRIGIR",
-        (ok ? "Correto: " : "Deveria ser ") + (alvoJ ? "Juizado Especial Cível" : "Vara Cível Comum") + " (valor da causa R$ " + (vc || 0).toFixed(2) + ")."));
+        (ok ? "Correto: " : "Deveria ser ") + (alvoJ ? "Juizado Especial Cível" : "Vara Cível Comum") +
+        " — valor da causa R$ " + (vc || 0).toFixed(2) + " (corte R$ " + corte.toLocaleString("pt-BR") + (pet.escritorio === "NG" ? ", NG" : ", high ticket") + ")."));
     } else ach.push(F(1, "Endereçamento", "ATENCAO", "Valor da causa não identificado."));
     const faltas = [];
     if (!pet.header_gratuidade) faltas.push("Gratuidade");
@@ -373,6 +378,61 @@
     const r = paraContendoPred(xml, ehHdrGratuidade);
     if (!r) return [xml, false];
     return [xml.slice(0, r.fim) + novo + xml.slice(r.fim), true];
+  }
+  /* ---- Novo tópico de gratuidade (ADC 80) — SÓ Luis Albert. Duas versões (Comum/JEC).
+        Parágrafos {ind:true} = parte individual: preenchida a partir do socioeconômico do
+        cliente; sem socio, ficam com "(preencher)" em amarelo. Texto verbatim aprovado. ---- */
+  const GRAT_COMUM = [
+    { t: "A gratuidade da justiça garante o acesso à Justiça àqueles que não possuem recursos suficientes para arcar com as despesas processuais sem prejuízo de sua subsistência. No caso, a situação econômica da parte Autora evidencia o preenchimento dos requisitos para a concessão do benefício, conforme se demonstra." },
+    { ind: true, t: "Atualmente, o(a) Autor(a) é (preencher), sendo (único provedor da residência/adequar ao caso concreto), na qual residem (preencher) pessoas, que (dependem integral ou parcialmente/adequar ao caso concreto) de sua renda mensal bruta no valor de R$ (preencher)." },
+    { ind: true, t: "Além disso, a parte Autora arca mensalmente com despesas essenciais, tais como (preencher: água, energia elétrica, alimentação, medicamentos, transporte, internet, despesas com dependentes, empréstimos etc.), de modo que a imposição das despesas processuais comprometeria parcela relevante dos recursos destinados à sua subsistência e à manutenção de seu núcleo familiar." },
+    { t: "Cumpre destacar, ainda, que, em 03 de setembro de 2026, o Supremo Tribunal Federal concluiu o julgamento da Ação Declaratória de Constitucionalidade nº 80 (ADC 80), estabelecendo parâmetros para a concessão da gratuidade da justiça, com extensão aos diversos ramos do Poder Judiciário." },
+    { t: "No referido julgamento, o STF reconheceu que a pessoa natural com renda mensal de até R$ 5.000,00 (cinco mil reais) faz jus à gratuidade da justiça sem necessidade de comprovação adicional da insuficiência de recursos, estabelecendo, assim, parâmetro objetivo para a análise do benefício." },
+    { t: "Tal presunção, contudo, não possui caráter absoluto, podendo ser afastada quando existirem elementos concretos que demonstrem patrimônio ou renda familiar incompatíveis com a concessão do benefício. Na hipótese dos autos, além de a renda da parte Autora encontrar-se dentro do parâmetro fixado pelo STF, não há elementos que evidenciem situação patrimonial ou financeira incompatível com a hipossuficiência alegada, sendo sua realidade econômica corroborada pelas circunstâncias individualizadas acima e pelos documentos anexados à inicial." },
+    { t: "Ressalta-se, ainda, que o Supremo Tribunal Federal conferiu à decisão efeitos ex nunc, estabelecendo que os novos critérios incidem somente sobre os processos ajuizados a partir da publicação da ata do julgamento. Considerando que a presente demanda foi proposta posteriormente ao referido marco temporal, os parâmetros estabelecidos na ADC 80 mostram-se plenamente aplicáveis ao caso." },
+    { t: "Dessa forma, considerando a situação econômica concretamente demonstrada, a renda mensal da parte Autora e seu enquadramento nos parâmetros estabelecidos pelo Supremo Tribunal Federal na ADC 80, pugna-se pela concessão dos benefícios da gratuidade da justiça, nos termos do art. 9º, inciso I, da Constituição do Estado do Amazonas e dos arts. 98 e seguintes do Código de Processo Civil." },
+  ];
+  const GRAT_JEC = [
+    { t: "Ainda que o acesso à Justiça Especial em primeiro grau independa do pagamento de custas, taxas ou despesas por força do art. 54 da lei específica n. 9.099/95, que abrange os Juizados Especiais, cumpre informar que a parte Autora não possui condições de arcar com as custas judiciais (preparo ou qualquer outro ato) sem comprometer severamente seu sustento." },
+    { ind: true, t: "Atualmente, o(a) autor(a) é (preencher), sendo o único provedor da sua casa (adequar ao caso concreto), na qual reside um total de (preencher) pessoas, que dependem integralmente da sua renda mensal bruta no valor de R$ (preencher)." },
+    { ind: true, t: "Além disso, a parte autora arca com despesas essenciais, tais como (preencher, ex.: água, luz, alimentação, medicamentos, transporte, internet, cuidado de dependentes, empréstimos, etc), de modo que não dispõe de recursos para suportar despesas extras, ainda que processuais, sem prejuízo de sua própria subsistência e de seu núcleo familiar." },
+    { t: "Por fim, cabe destacar que, em 03 de setembro de 2026, o Supremo Tribunal Federal concluiu o julgamento da ADC 80, estabelecendo novos parâmetros para a concessão da gratuidade da justiça, com aplicação aos diversos ramos do Poder Judiciário." },
+    { t: "A decisão reconheceu a presunção relativa de insuficiência de recursos da pessoa natural que aufere renda mensal de até R$ 5.000,00 (cinco mil reais), ressalvada a possibilidade de afastamento da presunção quando o magistrado verificar, no caso concreto, patrimônio ou renda familiar incompatíveis com a alegada hipossuficiência, mediante análise das circunstâncias concretamente demonstradas." },
+    { t: "O STF conferiu à decisão efeitos ex nunc, a contar da publicação da ata do julgamento de mérito, aplicando-se os novos critérios somente às ações ajuizadas a partir desse marco temporal. Considerando que a presente demanda foi proposta posteriormente à publicação da referida ata, mostra-se aplicável ao caso o parâmetro estabelecido na ADC 80." },
+    { t: "Por todo o exposto, pugna-se pela concessão dos benefícios da gratuidade da justiça, à luz dos parâmetros fixados pelo Supremo Tribunal Federal no julgamento da ADC 80, bem como do art. 9º, inciso I, da Constituição do Estado do Amazonas, dos arts. 98 e seguintes do Código de Processo Civil e do art. 54 da Lei nº 9.099/95." },
+  ];
+  const HL_RPR = '<w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="24"/><w:szCs w:val="24"/><w:highlight w:val="yellow"/></w:rPr>';
+  function escXml(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  function paraGrat(texto, hl) {
+    return '<w:p w14:paraId="' + npid() + '" w14:textId="77777777">' + PPR_BODY + '<w:r>' + (hl ? HL_RPR : RPR) + '<w:t xml:space="preserve">' + escXml(texto) + '</w:t></w:r></w:p>';
+  }
+  function textoDoPara(tag) { return (tag.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || []).map(r => r.replace(/<w:t[^>]*>/, "").replace("</w:t>", "")).join(""); }
+  function detectarEscritorio(texto) {
+    return /NICOLAS\s+GOMES/.test(deburrUp(texto || "")) ? "NG" : "LA";
+  }
+  // Substitui o CORPO da seção de gratuidade (do título até a próxima seção) pelo texto
+  // ADC 80 (Comum/JEC). A parte individual é preenchida com o socioeconômico do cliente;
+  // sem socio, fica "(preencher)" em amarelo. Se não achar a seção, insere após o título.
+  function atualizarGratuidade(xml, comum, socioTexto, log) {
+    const re = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g; let m; const blocks = [];
+    while ((m = re.exec(xml))) blocks.push({ ini: m.index, fim: m.index + m[0].length, tag: m[0] });
+    const hi = blocks.findIndex(b => ehHdrGratuidade(textoDoPara(b.tag)));
+    if (hi < 0) { log.push("⚠️ Gratuidade (ADC 80) NÃO inserida — seção 'DO PEDIDO DE JUSTIÇA GRATUITA' não encontrada. Inserir manualmente."); return xml; }
+    let nj = -1;
+    for (let j = hi + 1; j < blocks.length; j++) { if (isHeading(textoDoPara(blocks[j].tag))) { nj = j; break; } }
+    const ini = blocks[hi].fim;
+    const fim = nj >= 0 ? blocks[nj].ini : blocks[hi].fim;
+    const socio = socioTexto ? limparSocio(socioTexto) : "";
+    const partes = []; let socioEmitido = false;
+    for (const p of (comum ? GRAT_COMUM : GRAT_JEC)) {
+      if (p.ind) {
+        if (socio) { if (!socioEmitido) { partes.push(paraGrat(socio, false)); socioEmitido = true; } }
+        else partes.push(paraGrat(p.t, true));  // sem socio → "(preencher)" em amarelo
+      } else partes.push(paraGrat(p.t, false));
+    }
+    log.push("Tópico de gratuidade (ADC 80) — versão " + (comum ? "JUSTIÇA COMUM" : "JUIZADO/JEC")
+      + (socio ? " (individualizado pelo socioeconômico)" : " — parte individual em amarelo '(preencher)' para a equipe") + ".");
+    return xml.slice(0, ini) + partes.join("") + xml.slice(fim);
   }
   function socioeconomico(xml, socioTexto, log, info) {
     info = info || {};
@@ -613,11 +673,18 @@
   /* ------------------------- orquestração ------------------------- */
   LEX.corrigir = function (docXml, stylesXml, ctx) {
     const log = [];
-    const socioInfo = {};
+    const socioInfo = { pedido: false, ok: true };
     let xml = LEX.mergeRuns(docXml);
     xml = corrigirGenero(xml, ctx.sexo, log);
     xml = inserirNumero(xml, ctx.numero_endereco, log);
-    xml = socioeconomico(xml, ctx.socio_texto, log, socioInfo);
+    // Gratuidade: Luis Albert usa o tópico ADC 80 (versão conforme o foro); NG mantém o
+    // comportamento anterior (socioeconômico no início da seção) — parâmetros do NG são outros.
+    const _pJEC = /JUIZADO ESPECIAL/i.test(paraTextos(xml)[0] || "");
+    const _comum = ctx.alvo_vara_comum != null ? !!ctx.alvo_vara_comum : !_pJEC;
+    if (detectarEscritorio(paraTextos(xml).join("\n")) === "LA")
+      xml = atualizarGratuidade(xml, _comum, ctx.socio_texto, log);
+    else
+      xml = socioeconomico(xml, ctx.socio_texto, log, socioInfo);
     xml = danoMoralExtenso(xml, log);
     xml = corrigirExtensos(xml, ctx.valores || [], log);
     if (ctx.alvo_vara_comum != null) xml = ajustarEnderecamento(xml, ctx.alvo_vara_comum, log);

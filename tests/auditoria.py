@@ -174,6 +174,36 @@ def a_ng_kit():
     check(ag2 == "1234" and cc2 == "56789-0", "agência/conta sem 'nº' (LEX)")
 
 
+def a_gratuidade_adc80():
+    grupo("Gratuidade ADC 80 + escritório (Luis Albert × NG)")
+    check(extract.detectar_escritorio("... Luis Albert Advogado ...") == "LA", "padrão = Luis Albert (LA)")
+    check(extract.detectar_escritorio("NICOLAS GOMES ADVOGADO") == "NG", "detecta Nicolas Gomes (NG)")
+    HDR = "2.2. DO PEDIDO DE JUSTIÇA GRATUITA"
+    base = _doc(_p("AO JUÍZO DE DIREITO DA VARA CÍVEL"), _p(HDR, True),
+                _p("TEXTO ANTIGO da gratuidade que deve ser substituído."),
+                _p("2.3. DA CONCLUSÃO", True))
+    socio = "Atualmente, a parte autora é professora, é a única provedora, reside um total de 3 pessoas, renda mensal de 2.000 reais."
+    # LA + socio: ADC 80 individualizado (sem (preencher)), versão comum
+    out = corrections.atualizar_gratuidade(base, True, socio, [])
+    t = _txt(out)
+    check("ADC 80" in t, "insere o texto da ADC 80")
+    check("professora" in t and "(preencher)" not in t, "individualiza pelo socioeconômico (sem '(preencher)')")
+    check("TEXTO ANTIGO" not in t, "substitui o texto antigo da seção")
+    check("DA CONCLUSÃO" in t, "preserva a próxima seção")
+    check("9.099/95" not in t, "versão COMUM (sem art. 54 da Lei 9.099/95)")
+    # LA sem socio: mantém '(preencher)' em amarelo; versão JEC tem art. 54
+    outp = corrections.atualizar_gratuidade(base, False, "", [])
+    check("(preencher)" in _txt(outp) and 'w:highlight w:val="yellow"' in outp, "sem socio → '(preencher)' em amarelo")
+    check("9.099/95" in _txt(outp), "versão JEC (art. 54 da Lei 9.099/95)")
+    # XML bem-formado
+    import xml.dom.minidom as _m
+    try:
+        _m.parseString(out); ok_xml = True
+    except Exception:
+        ok_xml = False
+    check(ok_xml, "XML da seção substituída é bem-formado")
+
+
 def a_revisao():
     grupo("Revisão (ortografia / tratamento / tipografia / underscores / latim)")
     frag = ("Data venia, cometeu-se uma excessão grave. Vossa excelência sabe. "
@@ -298,6 +328,7 @@ if __name__ == "__main__":
     a_enderecamento()
     a_anp()
     a_ng_kit()
+    a_gratuidade_adc80()
     a_revisao()
     a_formatacao()
     a_auditoria_tabelas()

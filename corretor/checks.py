@@ -2,7 +2,8 @@
 """Conferência dos 12 pontos do POP a partir dos dados extraídos + inputs do operador."""
 from datetime import date
 
-TETO_JUIZADO = 64840.00
+TETO_JUIZADO = 64840.00   # teto do JEC (06/2026) — referência
+HIGH_TICKET = 50000.00    # separação JEC × Vara Comum: valor da causa > R$50.000 = high ticket → comum
 RUBRICAS_EXCECAO = ["MORA", "ENCARGOS", "REFINANCIAMENTO", "ANP", "RMC", "RCC"]
 
 OK, ATENCAO, CORRIGIR = "OK", "ATENCAO", "CORRIGIR"
@@ -43,8 +44,9 @@ def conferir(pet, plan, extrato, op):
         alvo = "Vara Cível Comum (exceção de rubrica)"
         ok = pet.get("endereco_vara_comum")
     elif vc is not None:
-        alvo = "Juizado Especial Cível" if vc <= TETO_JUIZADO else "Vara Cível Comum"
-        ok = pet.get("endereco_juizado") if vc <= TETO_JUIZADO else pet.get("endereco_vara_comum")
+        corte = TETO_JUIZADO if pet.get("escritorio") == "NG" else HIGH_TICKET
+        alvo = "Juizado Especial Cível" if vc <= corte else "Vara Cível Comum"
+        ok = pet.get("endereco_juizado") if vc <= corte else pet.get("endereco_vara_comum")
     else:
         alvo, ok = "?", None
     if tem_excecao:
