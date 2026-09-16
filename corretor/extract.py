@@ -5,12 +5,33 @@ import unicodedata
 from . import docxio
 
 
+def _deb(s):
+    return "".join(c for c in unicodedata.normalize("NFD", s or "")
+                   if unicodedata.category(c) != "Mn").upper()
+
+
 def eh_anp(texto):
     """Ausência de Notificação Prévia (ANP): sempre Justiça Comum, independente do valor."""
-    dt = "".join(c for c in unicodedata.normalize("NFD", texto or "")
-                 if unicodedata.category(c) != "Mn").upper()
     return bool(re.search(r"NOTIFICACAO PREVIA|PREVIA NOTIFICACAO|"
-                          r"AUSENCIA DE (PREVIA )?NOTIFICACAO|SEM (PREVIA )?NOTIFICACAO", dt))
+                          r"AUSENCIA DE (PREVIA )?NOTIFICACAO|SEM (PREVIA )?NOTIFICACAO", _deb(texto)))
+
+
+def pedidos_preliminares(texto):
+    """Detecta pedidos preliminares na PEÇA INTEIRA (LEX pede no cabeçalho; NG em seções)."""
+    tu = _deb(texto)
+    return {
+        "gratuidade": "GRATUIDADE" in tu or "JUSTICA GRATUITA" in tu,
+        "inversao": "INVERS" in tu and "ONUS" in tu,
+        "tutela": "TUTELA DE URG" in tu or "TUTELA ANTECIPADA" in tu,
+        "prioridade": "PRIORIDADE" in tu,
+    }
+
+
+def dados_bancarios(texto):
+    """Agência/conta — aceita 'agência 5042' e 'agência nº 5042' (kit NG)."""
+    mag = re.search(r'ag[êe]ncia[^\d]{0,8}(\d[\d.\-]*)', texto, re.I)
+    mcc = re.search(r'conta\s+corrente[^\d]{0,8}(\d[\d.\-]*)', texto, re.I)
+    return (mag.group(1).strip() if mag else None, mcc.group(1).strip() if mcc else None)
 
 
 def _num(br):
@@ -30,12 +51,12 @@ def extrair_peticao(caminho_docx):
     texto = "\n".join(paras)
     d = {"paragrafos": paras}
 
-    # cabeçalho / pedidos preliminares
-    cab = "\n".join(paras[:8]).upper()
-    d["header_gratuidade"] = "GRATUIDADE" in cab
-    d["header_inversao"] = "INVERS" in cab and "ÔNUS" in cab.replace("ONUS", "ÔNUS")
-    d["header_tutela"] = "TUTELA DE URG" in cab
-    d["header_prioridade_idoso"] = "PRIORIDADE PROCESSUAL" in cab or "IDOSO" in cab
+    # pedidos preliminares (peça inteira — LEX no cabeçalho, NG em seções)
+    _prel = pedidos_preliminares(texto)
+    d["header_gratuidade"] = _prel["gratuidade"]
+    d["header_inversao"] = _prel["inversao"]
+    d["header_tutela"] = _prel["tutela"]
+    d["header_prioridade_idoso"] = _prel["prioridade"]
 
     # endereçamento
     l1 = paras[0].upper() if paras else ""
@@ -58,11 +79,8 @@ def extrair_peticao(caminho_docx):
     d["endereco_logradouro"] = mend.group(1).strip() if mend else None
     d["endereco_tem_numero"] = bool(mend and re.search(r'\bN[ºo]\.?\s*\d+|,\s*\d+', mend.group(1)))
 
-    # dados bancários
-    mag = re.search(r'ag[êe]ncia\s*([\d\-]+)', texto, re.I)
-    d["agencia"] = mag.group(1).strip() if mag else None
-    mcc = re.search(r'conta\s+corrente\s*([\d\-]+)', texto, re.I)
-    d["conta"] = mcc.group(1).strip() if mcc else None
+    # dados bancários — aceita "agência 5042" e "agência nº 5042" (kit NG)
+    d["agencia"], d["conta"] = dados_bancarios(texto)
 
     # período
     mper = re.search(r'desde\s*(\d{2}/\d{2}/\d{4})\s*at[ée]\s*(\d{2}/\d{2}/\d{4})', texto)

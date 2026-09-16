@@ -101,11 +101,13 @@
     const paras = paraTextos(xml);
     const texto = paras.join("\n");
     const d = { paragrafos: paras };
-    const cab = paras.slice(0, 8).join("\n").toUpperCase();
-    d.header_gratuidade = cab.indexOf("GRATUIDADE") >= 0 || cab.indexOf("JUSTIÇA GRATUITA") >= 0;
-    d.header_inversao = cab.indexOf("INVERS") >= 0 && cab.indexOf("ÔNUS") >= 0;
-    d.header_tutela = cab.indexOf("TUTELA DE URG") >= 0;
-    d.header_prioridade_idoso = cab.indexOf("PRIORIDADE PROCESSUAL") >= 0;
+    // pedidos preliminares: procurar na PEÇA INTEIRA — o LEX pede no cabeçalho,
+    // o NG pede em seções (ex.: "3.2. DO PEDIDO DE JUSTIÇA GRATUITA").
+    const txtU = deburrUp(texto);
+    d.header_gratuidade = txtU.indexOf("GRATUIDADE") >= 0 || txtU.indexOf("JUSTICA GRATUITA") >= 0;
+    d.header_inversao = txtU.indexOf("INVERS") >= 0 && txtU.indexOf("ONUS") >= 0;
+    d.header_tutela = txtU.indexOf("TUTELA DE URG") >= 0 || txtU.indexOf("TUTELA ANTECIPADA") >= 0;
+    d.header_prioridade_idoso = txtU.indexOf("PRIORIDADE") >= 0;
     const l1 = (paras[0] || "").toUpperCase();
     d.endereco_juizado = l1.indexOf("JUIZADO ESPECIAL") >= 0;
     d.endereco_vara_comum = l1.indexOf("VARA C") >= 0 && l1.indexOf("JUIZADO") < 0;
@@ -119,8 +121,9 @@
     m = texto.match(/residente\s+n[ao]\s+([\s\S]+?),\s*Bairro:/);
     d.endereco_logradouro = m ? m[1].trim() : null;
     d.endereco_tem_numero = !!(m && /\bN[ºo]\.?\s*\d+|,\s*\d+/.test(m[1]));
-    m = texto.match(/ag[êe]ncia\s*([\d\-]+)/i); d.agencia = m ? m[1].trim() : null;
-    m = texto.match(/conta\s+corrente\s*([\d\-]+)/i); d.conta = m ? m[1].trim() : null;
+    // aceita "agência 5042" e "agência nº 5042" / "conta corrente nº 402615-2" (kit NG)
+    m = texto.match(/ag[êe]ncia[^\d]{0,8}(\d[\d.\-]*)/i); d.agencia = m ? m[1].trim() : null;
+    m = texto.match(/conta\s+corrente[^\d]{0,8}(\d[\d.\-]*)/i); d.conta = m ? m[1].trim() : null;
     m = texto.match(/desde\s*(\d{2}\/\d{2}\/\d{4})\s*at[ée]\s*(\d{2}\/\d{2}\/\d{4})/) ||
         texto.match(/per[íi]odo de\s*(\d{2}\/\d{2}\/\d{4})\s*at[ée]\s*(\d{2}\/\d{2}\/\d{4})/);
     d.periodo = m ? [m[1], m[2]] : [null, null];

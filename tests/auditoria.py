@@ -153,6 +153,27 @@ def a_anp():
     check(extract.eh_anp("AÇÃO DECLARATÓRIA de inexigibilidade de débito") is False, "não marca peça comum como ANP")
 
 
+def a_ng_kit():
+    grupo("Kit NG (peça com estrutura diferente)")
+    # gratuidade pedida numa SEÇÃO (não no cabeçalho) — kit NG
+    ng = extract.pedidos_preliminares(
+        "DOS FATOS ... 3.2. DO PEDIDO DE JUSTIÇA GRATUITA. Cumpre informar que a parte "
+        "Autora não possui condições de arcar com as custas judiciais ...")
+    check(ng["gratuidade"] is True, "gratuidade detectada em seção (NG) — não só no cabeçalho")
+    # gratuidade no cabeçalho — kit LEX
+    lex = extract.pedidos_preliminares("COM PEDIDO DE GRATUIDADE DE JUSTIÇA E INVERSÃO DO ÔNUS")
+    check(lex["gratuidade"] is True and lex["inversao"] is True, "gratuidade+inversão no cabeçalho (LEX)")
+    check(extract.pedidos_preliminares("ação de cobrança simples")["gratuidade"] is False,
+          "peça sem gratuidade → não marca 'faltando' errado")
+    # agência/conta com "nº" (NG)
+    ag, cc = extract.dados_bancarios(
+        "correntista mantendo conta ativa na agência nº 5042, conta corrente nº 402615-2, sempre")
+    check(ag == "5042" and cc == "402615-2", "agência/conta com 'nº' (NG)")
+    # agência/conta sem "nº" (LEX)
+    ag2, cc2 = extract.dados_bancarios("junto à agência 1234, conta corrente 56789-0 do banco")
+    check(ag2 == "1234" and cc2 == "56789-0", "agência/conta sem 'nº' (LEX)")
+
+
 def a_revisao():
     grupo("Revisão (ortografia / tratamento / tipografia / underscores / latim)")
     frag = ("Data venia, cometeu-se uma excessão grave. Vossa excelência sabe. "
@@ -248,6 +269,7 @@ if __name__ == "__main__":
     a_socio()
     a_enderecamento()
     a_anp()
+    a_ng_kit()
     a_revisao()
     a_formatacao()
     a_pipeline_xml()
