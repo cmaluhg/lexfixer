@@ -234,12 +234,26 @@ def _limpar_socio(t):
     t = t.replace("é o único provedor", "é a única provedora")
     t = t.replace("encontra-se impossibilitado", "encontra-se impossibilitada")
     t = t.replace("está impossibilitado", "está impossibilitada")
-    t = re.sub(r'de at[ée]\s*2500\b', 'de até 2.500', t)
+    # typos comuns digitados à mão
+    t = re.sub(r'\brebda\b', 'renda', t, flags=re.I)
+    t = re.sub(r'\brenta\b', 'renda', t, flags=re.I)
+    t = re.sub(r'\brensa\b', 'renda', t, flags=re.I)
+    t = re.sub(r'\brendda\b', 'renda', t, flags=re.I)
+    t = re.sub(r'\bsalario\b', 'salário', t, flags=re.I)
     t = re.sub(r'aproximadamente de\s*(\d)', r'de aproximadamente \1', t)
     # remove frase duplicada "A residência do(a) autor(a) abriga mais de N pessoas"
     t = re.sub(r'\s*A residência (?:do\(a\) autor\(a\)|da parte autora) abriga mais de \d+ pessoas[,\.]', '', t)
+    # valores em contexto monetário ganham separador de milhar (5000 -> 5.000)
+    t = re.sub(r'R\$\s*(\d{1,3})(\d{3})\b', r'R$ \1.\2', t)
+    t = re.sub(r'\b(\d{1,3})(\d{3})(\s*reais)', r'\1.\2\3', t)
+    t = re.sub(r'\b(de|at[ée])\s+(\d{1,3})(\d{3})\b(?![\/\d])', r'\1 \2.\3', t, flags=re.I)
     t = re.sub(r'\s{2,}', ' ', t)
-    return t.strip()
+    t = re.sub(r' +([,;:.!?])', r'\1', t).strip()
+    if t:
+        t = t[0].upper() + t[1:]
+        if t[-1] not in ".!?":
+            t += "."
+    return t
 
 
 _MARC_SOCIO = re.compile(

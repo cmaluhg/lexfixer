@@ -16,6 +16,7 @@ CURADO = {
     "previlégio": "privilégio", "previlegio": "privilégio",
     "beneficiente": "beneficente",
     "haja visto": "haja vista",
+    "rebda": "renda", "renta": "renda", "rendda": "renda",
     "seje": "seja",
     "propor a presente ação": "propor a presente ação",  # placeholder inócuo
 }

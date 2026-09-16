@@ -174,6 +174,16 @@ def a_ng_kit():
     check(ag2 == "1234" and cc2 == "56789-0", "agência/conta sem 'nº' (LEX)")
 
 
+def a_socio_correcao():
+    grupo("Correção do texto socioeconômico (grafia/valores)")
+    c = corrections._limpar_socio("a cliente tem uma rebda de até 5000 para 4 pessoas")
+    check("renda" in c and "rebda" not in c, "typo 'rebda' → 'renda'")
+    check("5.000" in c and " 5000" not in c, "valor '5000' → '5.000'")
+    check(c[0].isupper() and c.endswith("."), "capitaliza a 1ª letra e fecha com ponto")
+    check("3.000 reais" in corrections._limpar_socio("renda de 3000 reais"), "'3000 reais' → '3.000 reais'")
+    check("R$ 2.500" in corrections._limpar_socio("R$ 2500 por mês"), "'R$ 2500' → 'R$ 2.500'")
+
+
 def a_gratuidade_adc80():
     grupo("Gratuidade ADC 80 + escritório (Luis Albert × NG)")
     check(extract.detectar_escritorio("... Luis Albert Advogado ...") == "LA", "padrão = Luis Albert (LA)")
@@ -328,6 +338,7 @@ if __name__ == "__main__":
     a_enderecamento()
     a_anp()
     a_ng_kit()
+    a_socio_correcao()
     a_gratuidade_adc80()
     a_revisao()
     a_formatacao()

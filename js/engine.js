@@ -345,11 +345,18 @@
       .replace(/é o único provedor/g, "é a única provedora")
       .replace(/encontra-se impossibilitado/g, "encontra-se impossibilitada")
       .replace(/está impossibilitado/g, "está impossibilitada")
-      .replace(/de at[ée]\s*2500\b/g, "de até 2.500")
-      .replace(/aproximadamente de\s*(\d)/g, "de aproximadamente $1")
-      .replace(/\s*A residência (?:do\(a\) autor\(a\)|da parte autora) abriga mais de \d+ pessoas[,.]/g, "")
-      .replace(/\s{2,}/g, " ");
-    return t.trim();
+      // typos comuns digitados à mão no socioeconômico
+      .replace(/\brebda\b/gi, "renda").replace(/\brenta\b/gi, "renda").replace(/\brensa\b/gi, "renda")
+      .replace(/\brendda\b/gi, "renda").replace(/\bsalario\b/gi, "salário")
+      .replace(/\baproximadamente de\s*(\d)/g, "de aproximadamente $1")
+      .replace(/\s*A residência (?:do\(a\) autor\(a\)|da parte autora) abriga mais de \d+ pessoas[,.]/g, "");
+    // valores em contexto monetário ganham separador de milhar (5000 -> 5.000)
+    t = t.replace(/R\$\s*(\d{1,3})(\d{3})\b/g, "R$ $1.$2")
+      .replace(/\b(\d{1,3})(\d{3})(\s*reais)/g, "$1.$2$3")
+      .replace(/\b(de|at[ée])\s+(\d{1,3})(\d{3})\b(?!\s*[\/\d])/gi, "$1 $2.$3");
+    t = t.replace(/ {2,}/g, " ").replace(/ +([,;:.!?])/g, "$1").trim();
+    if (t) { t = t.charAt(0).toUpperCase() + t.slice(1); if (!/[.!?]$/.test(t)) t += "."; }
+    return t;
   }
   // um parágrafo é o socioeconômico (template) se começa com "Atualmente," E
   // traz marcadores de renda/provedor/hipossuficiência — evita casar o parágrafo
@@ -606,7 +613,7 @@
   const CURADO = { "excessão": "exceção", "excessões": "exceções", "excessao": "exceção",
     "atravéz": "através", "atravez": "através", "concerteza": "com certeza",
     "previlégio": "privilégio", "previlegio": "privilégio", "beneficiente": "beneficente",
-    "haja visto": "haja vista" };
+    "haja visto": "haja vista", "rebda": "renda", "renta": "renda", "rendda": "renda" };
   const RE_TXT = /(<w:t[^>]*>)([^<]*)(<\/w:t>)/g;
   const RE_RUN = /<w:r>(<w:rPr>[\s\S]*?<\/w:rPr>)?(<w:t[^>]*>)([^<]*)(<\/w:t>)<\/w:r>/g;
   const RE_LATIM = /\b(fumus\s+bon[io]s?\s+[ij]uris|periculum\s+in\s+mora|inaudita\s+altera\s+parte|in\s+re\s+ipsa|ex\s+positis|ex\s+tunc|ex\s+nunc|data\s+(?:m[áa]xima\s+)?venia|mutatis\s+mutandis|ad\s+causam|erga\s+omnes)\b/gi;
