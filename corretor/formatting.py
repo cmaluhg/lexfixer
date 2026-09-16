@@ -133,6 +133,43 @@ def colapsar_vazios(xml, maximo=1):
     return "".join(out)
 
 
+def auditar_tabelas(xml):
+    """Audita as TABELAS de valores da peça: soma dos itens == VALOR TOTAL e
+    VALOR EM DOBRO == 2x total. Devolve {ok, tabelas, problemas}."""
+    def num_rs(txt):
+        return [float(m.replace(".", "").replace(",", "."))
+                for m in re.findall(r'R\$\s*([\d.]+,\d{2})', txt)]
+
+    def cell_text(tr):
+        return " ".join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', tr))
+
+    out = {"ok": True, "tabelas": [], "problemas": []}
+    for idx, t in enumerate(re.findall(r'<w:tbl>.*?</w:tbl>', xml, re.S)):
+        rows = []
+        for tr in re.findall(r'<w:tr\b.*?</w:tr>', t, re.S):
+            txt = cell_text(tr)
+            rows.append({"txt": txt, "up": txt.upper(), "vals": num_rs(txt)})
+        total_row = next((r for r in rows if "TOTAL" in r["up"] and "DOBRO" not in r["up"] and r["vals"]), None)
+        if not total_row:
+            continue
+        dobro_row = next((r for r in rows if "DOBRO" in r["up"] and r["vals"]), None)
+        itens = [r for r in rows if r is not total_row and r is not dobro_row and r["vals"]]
+        soma = sum(r["vals"][-1] for r in itens)
+        total = total_row["vals"][-1]
+        dobro = dobro_row["vals"][-1] if dobro_row else None
+        probs = []
+        if itens and abs(soma - total) > 0.01:
+            probs.append("soma dos itens R$ %.2f != VALOR TOTAL R$ %.2f" % (soma, total))
+        if dobro is not None and abs(dobro - 2 * total) > 0.01:
+            probs.append("VALOR EM DOBRO R$ %.2f != 2x total (R$ %.2f)" % (dobro, 2 * total))
+        titulo = rows[0]["txt"].strip() if rows else ("Tabela %d" % (idx + 1))
+        out["tabelas"].append({"titulo": titulo, "soma": soma, "total": total, "dobro": dobro, "problemas": probs})
+        if probs:
+            out["ok"] = False
+            out["problemas"].append('"%s": %s' % (titulo, "; ".join(probs)))
+    return out
+
+
 def aplicar_tudo(document_xml, styles_xml=None):
     document_xml, styles_xml = espacamento_115(document_xml, styles_xml)
     document_xml = centralizar_tabelas(document_xml)

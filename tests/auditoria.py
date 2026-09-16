@@ -234,6 +234,34 @@ def a_formatacao():
     check(n_corpo == 1, "vazios do corpo ainda colapsam (buraco antes do MÉRITO)")
 
 
+def _tbl(itens, total, dobro):
+    """Monta uma <w:tbl> de valores: itens=[valor,...], + VALOR TOTAL + VALOR EM DOBRO."""
+    def cel(t):
+        return '<w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">%s</w:t></w:r></w:p></w:tc>' % t
+    def rs(v):
+        return "R$ %s,%02d" % (format(int(v), ",d").replace(",", "."), round((v - int(v)) * 100))
+    rows = ['<w:tr>' + cel("Data") + cel("Descrição") + cel("Valor") + '</w:tr>']
+    for v in itens:
+        rows.append('<w:tr>' + cel("01/01/2025") + cel("RUBRICA") + cel(rs(v)) + '</w:tr>')
+    rows.append('<w:tr>' + cel("VALOR TOTAL") + cel("") + cel(rs(total)) + '</w:tr>')
+    rows.append('<w:tr>' + cel("VALOR EM DOBRO") + cel("") + cel(rs(dobro)) + '</w:tr>')
+    return '<w:tbl><w:tblPr/>' + "".join(rows) + '</w:tbl>'
+
+
+def a_auditoria_tabelas():
+    grupo("Auditoria das tabelas de valores (aviso ORG DOC)")
+    ok = formatting.auditar_tabelas(_doc(_p("x")).replace("</w:body>", _tbl([60, 60], 120, 240) + "</w:body>"))
+    check(ok["ok"] is True, "tabela correta (60+60=120, dobro 240) → sem erro")
+    somaerr = formatting.auditar_tabelas(_doc(_p("x")).replace("</w:body>", _tbl([60, 60], 150, 300) + "</w:body>"))
+    check(somaerr["ok"] is False and any("soma" in p for p in somaerr["problemas"]), "soma dos itens ≠ total → erro")
+    dobroerr = formatting.auditar_tabelas(_doc(_p("x")).replace("</w:body>", _tbl([60, 60], 120, 999) + "</w:body>"))
+    check(dobroerr["ok"] is False and any("DOBRO" in p for p in dobroerr["problemas"]), "dobro ≠ 2× total → erro")
+    # tabela sem 'TOTAL' não é auditada (não gera falso erro)
+    semtotal = '<w:tbl><w:tblPr/><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>só texto</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    check(formatting.auditar_tabelas(_doc(_p("x")).replace("</w:body>", semtotal + "</w:body>"))["ok"] is True,
+          "tabela sem 'VALOR TOTAL' é ignorada (sem falso erro)")
+
+
 def a_pipeline_xml():
     grupo("Pipeline completo — XML bem-formado")
     doc = _doc(
@@ -272,6 +300,7 @@ if __name__ == "__main__":
     a_ng_kit()
     a_revisao()
     a_formatacao()
+    a_auditoria_tabelas()
     a_pipeline_xml()
     print("\n" + "=" * 50)
     if FALHAS:

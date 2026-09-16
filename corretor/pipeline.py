@@ -76,6 +76,10 @@ def processar(arqs, op, destino_docx):
     xml = corrections.aplicar(xml, ctx, acoes)
     xml, styles = formatting.aplicar_tudo(xml, styles)
     acoes.append("Formatação: espaçamento 1,15; tabelas centralizadas e inteiras; títulos não separados")
+    aud = formatting.auditar_tabelas(xml)
+    if not aud["ok"]:
+        acoes.append("⚠️ TABELA INCORRETA — voltar para Organização de documentos (ORG DOC): "
+                     + " | ".join(aud["problemas"]))
 
     extras = {"word/styles.xml": styles} if styles is not None else {}
     docxio.gravar_document_xml(src, xml, destino_docx, extras)

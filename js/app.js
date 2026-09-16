@@ -371,6 +371,11 @@
     if (chk.idoso) avisos += "<div class='warn-box'>Cliente idoso: os itens de prioridade (cabeçalho, tópico e pedido) foram inseridos automaticamente — confira antes de protocolar.</div>";
     if (res.socio && res.socio.pedido && !res.socio.ok)
       avisos += "<div class='warn-box' style='background:#fdecea;border-color:#e74c3c;color:#922'>⚠️ Socioeconômico NÃO individualizado automaticamente (não encontrei onde inseri-lo). Insira o texto manualmente na seção de Gratuidade e <b>retorne ao ORG DOC</b>.</div>";
+    // AUDITORIA DAS TABELAS de valores colocadas na peça
+    const audTbl = LEX.auditarTabelas(res.doc);
+    if (audTbl && !audTbl.ok)
+      avisos += "<div class='warn-box' style='background:#fdecea;border-color:#e74c3c;color:#922'>⚠️ <b>Tabela incorreta — voltar para Organização de documentos (ORG DOC).</b><br>" +
+        audTbl.problemas.map(esc).join("<br>") + "</div>";
     $("#warnIdoso").innerHTML = avisos;
     $("#resultado").classList.remove("hidden");
     $("#resultado").scrollIntoView({ behavior: "smooth" });

@@ -228,6 +228,41 @@
     return { achados: ach, idade, idoso, temExc, resumo };
   };
 
+  // Auditoria das TABELAS de valores colocadas na peça: soma dos itens == VALOR TOTAL
+  // e VALOR EM DOBRO == 2x total. Se não bater -> "tabela incorreta, voltar ao ORG DOC".
+  LEX.auditarTabelas = function (xml) {
+    const numRS = txt => {
+      const vs = []; const re = /R\$\s*([\d.]+,\d{2})/g; let m;
+      while ((m = re.exec(txt))) { const n = parseFloat(m[1].replace(/\./g, "").replace(",", ".")); if (!isNaN(n)) vs.push(n); }
+      return vs;
+    };
+    const cellText = c => (c.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || []).map(x => x.replace(/<w:t[^>]*>/, "").replace("</w:t>", "")).join(" ");
+    const out = { ok: true, tabelas: [], problemas: [] };
+    const tbls = xml.match(/<w:tbl>[\s\S]*?<\/w:tbl>/g) || [];
+    tbls.forEach((t, idx) => {
+      const rows = (t.match(/<w:tr\b[\s\S]*?<\/w:tr>/g) || []).map(tr => {
+        const txt = cellText(tr);
+        return { txt, up: txt.toUpperCase(), vals: numRS(txt) };
+      });
+      const totalRow = rows.find(r => r.up.indexOf("TOTAL") >= 0 && r.up.indexOf("DOBRO") < 0 && r.vals.length);
+      if (!totalRow) return;  // não é uma tabela de valores auditável
+      const dobroRow = rows.find(r => r.up.indexOf("DOBRO") >= 0 && r.vals.length);
+      const itens = rows.filter(r => r !== totalRow && r !== dobroRow && r.vals.length);
+      const soma = itens.reduce((s, r) => s + r.vals[r.vals.length - 1], 0);
+      const total = totalRow.vals[totalRow.vals.length - 1];
+      const dobro = dobroRow ? dobroRow.vals[dobroRow.vals.length - 1] : null;
+      const probs = [];
+      if (itens.length && Math.abs(soma - total) > 0.01)
+        probs.push("soma dos itens R$ " + soma.toFixed(2) + " ≠ VALOR TOTAL R$ " + total.toFixed(2));
+      if (dobro != null && Math.abs(dobro - 2 * total) > 0.01)
+        probs.push("VALOR EM DOBRO R$ " + dobro.toFixed(2) + " ≠ 2× total (R$ " + (2 * total).toFixed(2) + ")");
+      const titulo = (rows[0] && rows[0].txt.trim()) || ("Tabela " + (idx + 1));
+      out.tabelas.push({ titulo, soma, total, dobro, itens: itens.length, problemas: probs });
+      if (probs.length) { out.ok = false; out.problemas.push('"' + titulo + '": ' + probs.join("; ")); }
+    });
+    return out;
+  };
+
   /* ------------------------- correções + estrutura ------------------------- */
   const RPR = '<w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>';
   const RPR_B = '<w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:b/><w:bCs/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>';
