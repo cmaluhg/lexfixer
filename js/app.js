@@ -287,6 +287,9 @@
     catch (err) { state.extrato = {}; avisosLeitura.push("extrato/faturas (" + dicaArquivo(err) + ")"); }
     try { state.socioTexto = arqs.socio ? await lerDocxTexto(arqs.socio) : ""; }
     catch (err) { state.socioTexto = ""; avisosLeitura.push("socioeconômico (" + dicaArquivo(err) + ")"); }
+    // pré-preenche o campo de texto socioeconômico com o que veio da pasta (a equipe pode
+    // editar ou colar direto). Só sobrescreve se o campo ainda estiver vazio.
+    { const ta = $("#socioTexto"); if (ta && !ta.value.trim() && state.socioTexto) ta.value = state.socioTexto; }
 
     const p = state.peticao.data, pl = state.plan, ex = state.extrato;
     $("#dados").innerHTML =
@@ -330,9 +333,11 @@
     if (anp) alvoVara = true;
     else if (chk.temExc) alvoVara = true;
     else if (p.valor_causa != null) alvoVara = p.valor_causa > (p.escritorio === "NG" ? 64840 : 50000);  // LA: high ticket R$50k; NG: teto
+    // texto socioeconômico: o que estiver colado no campo tem prioridade; senão o da pasta
+    const socioTxt = (($("#socioTexto") && $("#socioTexto").value) || "").trim() || state.socioTexto || "";
     const ctx = {
       sexo, nascimento: nasc, idade: chk.idade, idoso: chk.idoso,
-      numero_endereco: numero, socio_texto: state.socioTexto, alvo_vara_comum: alvoVara,
+      numero_endereco: numero, socio_texto: socioTxt, alvo_vara_comum: alvoVara,
       valores: [pl.total, pl.dobro, p.valor_causa, 15000],
     };
     const res = LEX.corrigir(state.peticao.doc, state.peticao.styles, ctx);

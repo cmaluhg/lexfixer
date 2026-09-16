@@ -56,6 +56,10 @@
         <div><button id="btnDetectar" class="btn btn-secondary" type="button">🔍 Reler do documento</button></div>
         <div><button id="btnGerar" class="gold">✅ Conferir e gerar peça corrigida</button></div>
       </div>
+      <div style="margin-top:14px">
+        <label for="socioTexto">Texto socioeconômico do cliente <span class="hint">(cole aqui — usado para individualizar a gratuidade)</span></label>
+        <textarea id="socioTexto" rows="4" style="width:100%;box-sizing:border-box;margin-top:4px;padding:10px;border:1px solid var(--line);border-radius:8px;font:inherit;resize:vertical" placeholder="Cole aqui o texto socioeconômico do cliente. Ex.: Atualmente, a parte autora é (profissão), é a única provedora da casa, na qual residem 3 pessoas, com renda mensal de R$ 2.000,00... — se a pasta tiver o 'socio economico.docx', ele já vem preenchido aqui e você pode editar."></textarea>
+      </div>
       <p class="hint" style="margin-top:8px">Preenchido automaticamente a partir do documento; confira e ajuste se necessário. A idade define os itens de idoso (60+). Nada é protocolado sem revisão humana.</p>
     </div>
 
@@ -74,7 +78,7 @@
   </div>
 </main>
 
-<footer>LexFixer · roda 100% no navegador · consulte o Manual do escritório para as regras completas. · <span id="versao">v2026.07.31-26</span></footer>
+<footer>LexFixer · roda 100% no navegador · consulte o Manual do escritório para as regras completas. · <span id="versao">v2026.07.31-27</span></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -84,7 +88,7 @@
   if (window['pdfjsLib']) window['pdfjsLib'].GlobalWorkerOptions.workerSrc =
     'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 </script>
-<script src="js/engine.js?v=2026.07.31-26"></script>
-<script src="js/app.js?v=2026.07.31-26"></script>
+<script src="js/engine.js?v=2026.07.31-27"></script>
+<script src="js/app.js?v=2026.07.31-27"></script>
 </body>
 </html>
