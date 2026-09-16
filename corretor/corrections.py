@@ -378,9 +378,16 @@ def aplicar(xml, ctx, log):
     xml = estrutura.corrigir_extensos(xml, ctx.get("valores") or [], log)
     if ctx.get("alvo_vara_comum") is not None:
         xml = estrutura.ajustar_enderecamento(xml, ctx["alvo_vara_comum"], log)
-    xml = estrutura.completar_cabecalho(xml, ctx.get("idoso"), log)
-    if ctx.get("idoso"):
+    # Idoso: só inserir tópico/pedido de prioridade se a peça AINDA não os tiver
+    # (o NG já traz o tópico 2.7 e o pedido — não duplicar).
+    _pri_txt = "\n".join("".join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', p))
+                         for p in re.findall(r'<w:p\b[^>]*>.*?</w:p>', xml, re.S))
+    _pri_ja = extract.prioridade_presente(_pri_txt)
+    xml = estrutura.completar_cabecalho(xml, ctx.get("idoso") and not _pri_ja, log)
+    if ctx.get("idoso") and not _pri_ja:
         xml = estrutura.inserir_itens_idoso(xml, ctx.get("nascimento"), ctx.get("idade"), log)
+    elif ctx.get("idoso"):
+        log.append("Prioridade de idoso já constava na peça — mantida (não reinserida)")
     xml = remover_marcador_prioridade(xml, log)
     xml = neutralizar_linguagem(xml, log)
     xml = estrutura.renumerar_pedidos(xml, log)

@@ -18,7 +18,7 @@ import sys
 import xml.dom.minidom as minidom
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from corretor import corrections, estrutura, formatting, revisao, extract  # noqa: E402
+from corretor import corrections, estrutura, formatting, revisao, extract, checks  # noqa: E402
 
 FALHAS = []
 _GRUPO = [None]
@@ -176,6 +176,46 @@ def a_ng_kit():
     check(extract.periodo_dano("referente às cobranças feitas no período de 20/01/2017 a 07/10/2022.") == ("20/01/2017", "07/10/2022"), "período NG ('...de X a Y')")
     check(extract.periodo_dano("cobranças desde 01/02/2018 até 05/06/2021") == ("01/02/2018", "05/06/2021"), "período LEX ('desde X até Y')")
     check(extract.periodo_dano("sem datas de período aqui") == (None, None), "sem período → (None, None)")
+
+
+def a_prioridade_idoso():
+    grupo("Prioridade de idoso — não reinserir se já existe (NG)")
+    # NG traz o tópico 2.7 na peça → deve ser detectado como presente
+    check(extract.prioridade_presente(
+        "2.7. DA PRIORIDADE NA TRAMITAÇÃO PROCESSUAL — REQUERENTE IDOSA 63 ANOS. "
+        "Nos termos do artigo 71 da Lei nº 10.741/2003 (Estatuto do Idoso)...") is True,
+        "detecta tópico de prioridade existente (NG, 'DA PRIORIDADE NA TRAMITAÇÃO')")
+    check(extract.prioridade_presente("requer a tramitação prioritária do feito") is True,
+          "detecta 'tramitação prioritária'")
+    check(extract.prioridade_presente("prioridade legal do Estatuto do Idoso à parte") is True,
+          "detecta 'prioridade' + 'Estatuto do Idoso'")
+    # marcador de cabeçalho sozinho NÃO conta como tópico presente → LA ainda insere
+    check(extract.prioridade_presente("COM PEDIDO DE PRIORIDADE PROCESSUAL: IDOSO") is False,
+          "marcador de cabeçalho isolado não conta (LA ainda insere o tópico)")
+    check(extract.prioridade_presente("ação revisional de contrato bancário") is False,
+          "peça sem prioridade → não marca presente")
+    # idempotência: após inserir numa peça LA, uma reexecução detecta e não duplica
+    lax = _doc(_p("2. DOS PEDIDOS", True), _p("conforme Súmulas 362 e 54 do STJ;"),
+               _p("3. DO MÉRITO", True))
+    check(extract.prioridade_presente(_txt(lax)) is False, "LA antes: sem tópico de prioridade")
+    ins = estrutura.inserir_itens_idoso(lax, "10/05/1958", 68, [])
+    tins = _txt(ins)
+    check(tins.count("DA PRIORIDADE NA TRAMITAÇÃO PROCESSUAL") == 1, "insere o tópico 1x")
+    check(extract.prioridade_presente(tins) is True, "após inserir: detectado (reexecução não duplica)")
+    # conferência: idoso + já presente → pontos 9/12 = OK (não CORRIGIR)
+    op = {"sexo": "F", "nascimento": "10/05/1958", "numero_endereco": None}
+    pet_ng = {"prioridade_presente": True, "header_prioridade_idoso": True, "valor_causa": 30000.0,
+              "endereco_juizado": True, "endereco_vara_comum": False, "anp": False,
+              "periodo": (None, None), "pedidos_letras": [], "escritorio": "NG"}
+    res = checks.conferir(pet_ng, {"rubricas": []}, None, op)
+    p9 = next(a for a in res["achados"] if a["n"] == 9)
+    p12 = next(a for a in res["achados"] if a["n"] == 12)
+    check(p9["status"] == "OK" and p12["status"] == "OK", "idoso + já presente → pontos 9/12 = OK")
+    # conferência: idoso + ausente → CORRIGIR (peça LA a completar)
+    pet_la = dict(pet_ng, prioridade_presente=False, escritorio="LA")
+    res2 = checks.conferir(pet_la, {"rubricas": []}, None, op)
+    p9b = next(a for a in res2["achados"] if a["n"] == 9)
+    check(p9b["status"] == "CORRIGIR", "idoso + ausente → ponto 9 = CORRIGIR (inserir)")
 
 
 def a_socio_correcao():
@@ -342,6 +382,7 @@ if __name__ == "__main__":
     a_enderecamento()
     a_anp()
     a_ng_kit()
+    a_prioridade_idoso()
     a_socio_correcao()
     a_gratuidade_adc80()
     a_revisao()

@@ -109,8 +109,12 @@ def conferir(pet, plan, extrato, op):
     ach.append(_f(8, "Socioeconômico", ATENCAO, "Individualizar e neutralizar (aplicado na etapa de correção)."))
 
     # PONTO 9/12 - idoso
-    if idoso:
-        ach.append(_f(9, "Prioridade (texto)", CORRIGIR if not pet.get("header_prioridade_idoso") else OK,
+    if idoso and pet.get("prioridade_presente"):
+        ach.append(_f(9, "Prioridade (texto)", OK,
+                      f"Cliente idoso ({idade} anos) — tópico de prioridade JÁ consta na peça; mantido (não duplicado)."))
+        ach.append(_f(12, "Prioridade (pedido)", OK, "Pedido de prioridade já consta na peça; mantido."))
+    elif idoso:
+        ach.append(_f(9, "Prioridade (texto)", CORRIGIR,
                       f"Cliente idoso ({idade} anos) → incluir tópico e pedido de prioridade."))
         ach.append(_f(12, "Prioridade (pedido)", CORRIGIR, f"Incluir pedido de prioridade (idade {idade})."))
     else:

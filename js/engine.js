@@ -108,6 +108,7 @@
     d.header_inversao = txtU.indexOf("INVERS") >= 0 && txtU.indexOf("ONUS") >= 0;
     d.header_tutela = txtU.indexOf("TUTELA DE URG") >= 0 || txtU.indexOf("TUTELA ANTECIPADA") >= 0;
     d.header_prioridade_idoso = txtU.indexOf("PRIORIDADE") >= 0;
+    d.prioridade_presente = prioridadePresente(texto);  // já tem tópico/pedido de idoso? (não reinserir)
     const l1 = (paras[0] || "").toUpperCase();
     d.endereco_juizado = l1.indexOf("JUIZADO ESPECIAL") >= 0;
     d.endereco_vara_comum = l1.indexOf("VARA C") >= 0 && l1.indexOf("JUIZADO") < 0;
@@ -218,7 +219,10 @@
     ach.push(F(6, "Tabela de valores", p6, m6));
     ach.push(F(7, "Dano material/datas", (pet.periodo[0] && pet.periodo[1]) ? "OK" : "ATENCAO", "Período: " + pet.periodo[0] + " a " + pet.periodo[1]));
     ach.push(F(8, "Socioeconômico", "ATENCAO", "Individualizado e neutralizado na correção."));
-    if (idoso) { ach.push(F(9, "Prioridade (texto)", "CORRIGIR", "Idoso (" + idade + ") → tópico e pedido de prioridade inseridos."));
+    if (idoso && pet.prioridade_presente) {
+      ach.push(F(9, "Prioridade (texto)", "OK", "Idoso (" + idade + ") — tópico de prioridade JÁ consta na peça; mantido (não duplicado)."));
+      ach.push(F(12, "Prioridade (pedido)", "OK", "Pedido de prioridade já consta na peça; mantido."));
+    } else if (idoso) { ach.push(F(9, "Prioridade (texto)", "CORRIGIR", "Idoso (" + idade + ") → tópico e pedido de prioridade inseridos."));
       ach.push(F(12, "Prioridade (pedido)", "CORRIGIR", "Pedido de prioridade inserido."));
     } else { const st = pet.marcador_prioridade ? "ATENCAO" : "OK";
       ach.push(F(9, "Prioridade (idoso)", st, (idade != null ? "Não idoso (" + idade + ")." : "Idade não informada.") + (pet.marcador_prioridade ? " Marcador [PRIORIDADE] removido." : ""))); }
@@ -417,6 +421,15 @@
   function textoDoPara(tag) { return (tag.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || []).map(r => r.replace(/<w:t[^>]*>/, "").replace("</w:t>", "")).join(""); }
   function detectarEscritorio(texto) {
     return /NICOLAS\s+GOMES/.test(deburrUp(texto || "")) ? "NG" : "LA";
+  }
+  // A peça JÁ traz um tópico/pedido de prioridade de idoso? (NG usa o tópico 2.7 "DA
+  // PRIORIDADE NA TRAMITAÇÃO PROCESSUAL" e o pedido correspondente). Serve para não
+  // duplicar/reinserir quando já existe — vale para os dois escritórios (idempotente).
+  function prioridadePresente(texto) {
+    const u = deburrUp(texto || "");
+    return /PRIORIDADE NA TRAMITA/.test(u) ||
+           /TRAMITAC\w* PRIORITARI/.test(u) ||
+           (/PRIORIDADE/.test(u) && /ESTATUTO DO IDOSO/.test(u));
   }
   // Substitui o CORPO da seção de gratuidade (do título até a próxima seção) pelo texto
   // ADC 80 (Comum/JEC). A parte individual é preenchida com o socioeconômico do cliente;
@@ -696,8 +709,12 @@
     xml = danoMoralExtenso(xml, log);
     xml = corrigirExtensos(xml, ctx.valores || [], log);
     if (ctx.alvo_vara_comum != null) xml = ajustarEnderecamento(xml, ctx.alvo_vara_comum, log);
-    xml = completarCabecalho(xml, ctx.idoso, log);
-    if (ctx.idoso) xml = inserirItensIdoso(xml, ctx.nascimento, ctx.idade, log);
+    // Idoso: só inserir tópico/pedido de prioridade se a peça AINDA não os tiver
+    // (o NG já traz o tópico 2.7 e o pedido — não duplicar).
+    const _priJa = prioridadePresente(paraTextos(xml).join("\n"));
+    xml = completarCabecalho(xml, ctx.idoso && !_priJa, log);
+    if (ctx.idoso && !_priJa) xml = inserirItensIdoso(xml, ctx.nascimento, ctx.idade, log);
+    else if (ctx.idoso) log.push("Prioridade de idoso já constava na peça — mantida (não reinserida)");
     xml = removerMarcador(xml, log);
     xml = neutralizarLinguagem(xml, log);
     xml = renumerarPedidos(xml, log);

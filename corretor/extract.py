@@ -15,6 +15,16 @@ def detectar_escritorio(texto):
     return "NG" if re.search(r"NICOLAS\s+GOMES", _deb(texto)) else "LA"
 
 
+def prioridade_presente(texto):
+    """A peça JÁ traz tópico/pedido de prioridade de idoso? (NG usa o tópico 2.7
+    'DA PRIORIDADE NA TRAMITAÇÃO PROCESSUAL' e o pedido). Evita duplicar/reinserir
+    quando já existe — vale para os dois escritórios (idempotente)."""
+    u = _deb(texto)
+    return bool(re.search(r"PRIORIDADE NA TRAMITA", u)
+                or re.search(r"TRAMITAC\w* PRIORITARI", u)
+                or (re.search(r"PRIORIDADE", u) and re.search(r"ESTATUTO DO IDOSO", u)))
+
+
 def eh_anp(texto):
     """Ausência de Notificação Prévia (ANP): sempre Justiça Comum, independente do valor."""
     return bool(re.search(r"NOTIFICACAO PREVIA|PREVIA NOTIFICACAO|"
@@ -70,6 +80,7 @@ def extrair_peticao(caminho_docx):
     d["header_inversao"] = _prel["inversao"]
     d["header_tutela"] = _prel["tutela"]
     d["header_prioridade_idoso"] = _prel["prioridade"]
+    d["prioridade_presente"] = prioridade_presente(texto)  # já tem tópico/pedido de idoso? (não reinserir)
 
     # endereçamento
     l1 = paras[0].upper() if paras else ""
