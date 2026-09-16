@@ -32,6 +32,14 @@ def pedidos_preliminares(texto):
     }
 
 
+def periodo_dano(texto):
+    """Período do dano material (início, fim) — aceita 'de/desde/entre X a/até/e Y' (LEX e NG)."""
+    m = re.search(r'(?:per[íi]odo(?:\s+de)?|desde|entre|de)\s*(\d{2}/\d{2}/\d{4})\s*(?:at[ée]|a|e|\-|até o dia)\s*(\d{2}/\d{2}/\d{4})', texto, re.I)
+    if not m:
+        m = re.search(r'(\d{2}/\d{2}/\d{4})\s*(?:at[ée]|\s+a\s+)\s*(\d{2}/\d{2}/\d{4})', texto, re.I)
+    return (m.group(1), m.group(2)) if m else (None, None)
+
+
 def dados_bancarios(texto):
     """Agência/conta — aceita 'agência 5042' e 'agência nº 5042' (kit NG)."""
     mag = re.search(r'ag[êe]ncia[^\d]{0,8}(\d[\d.\-]*)', texto, re.I)
@@ -88,11 +96,7 @@ def extrair_peticao(caminho_docx):
     # dados bancários — aceita "agência 5042" e "agência nº 5042" (kit NG)
     d["agencia"], d["conta"] = dados_bancarios(texto)
 
-    # período
-    mper = re.search(r'desde\s*(\d{2}/\d{2}/\d{4})\s*at[ée]\s*(\d{2}/\d{2}/\d{4})', texto)
-    if not mper:
-        mper = re.search(r'per[íi]odo de\s*(\d{2}/\d{2}/\d{4})\s*at[ée]\s*(\d{2}/\d{2}/\d{4})', texto)
-    d["periodo"] = (mper.group(1), mper.group(2)) if mper else (None, None)
+    d["periodo"] = periodo_dano(texto)  # dano material — aceita "X a Y" (NG) e "X até Y" (LEX)
 
     # dano moral: procura "R$ 15.000,00 (...)" ou "R$15000 ()"
     d["dano_moral_vazio"] = bool(re.search(r'R\$\s*15\.?000(?:,00)?\s*\(\s*\)', texto))

@@ -125,8 +125,9 @@
     // aceita "agência 5042" e "agência nº 5042" / "conta corrente nº 402615-2" (kit NG)
     m = texto.match(/ag[êe]ncia[^\d]{0,8}(\d[\d.\-]*)/i); d.agencia = m ? m[1].trim() : null;
     m = texto.match(/conta\s+corrente[^\d]{0,8}(\d[\d.\-]*)/i); d.conta = m ? m[1].trim() : null;
-    m = texto.match(/desde\s*(\d{2}\/\d{2}\/\d{4})\s*at[ée]\s*(\d{2}\/\d{2}\/\d{4})/) ||
-        texto.match(/per[íi]odo de\s*(\d{2}\/\d{2}\/\d{4})\s*at[ée]\s*(\d{2}\/\d{2}\/\d{4})/);
+    // período do dano material — aceita "de/desde/entre X a/até/e Y" (LEX e NG)
+    m = texto.match(/(?:per[íi]odo(?:\s+de)?|desde|entre|de)\s*(\d{2}\/\d{2}\/\d{4})\s*(?:at[ée]|a|e|\-|até o dia)\s*(\d{2}\/\d{2}\/\d{4})/i)
+      || texto.match(/(\d{2}\/\d{2}\/\d{4})\s*(?:at[ée]|\s+a\s+)\s*(\d{2}\/\d{2}\/\d{4})/i);
     d.periodo = m ? [m[1], m[2]] : [null, null];
     d.dano_moral_vazio = /R\$\s*15\.?000(?:,00)?\s*\(\s*\)/.test(texto);
     d.dano_moral_ok_extenso = texto.toLowerCase().indexOf("quinze mil reais") >= 0;

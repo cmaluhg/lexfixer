@@ -172,6 +172,10 @@ def a_ng_kit():
     # agência/conta sem "nº" (LEX)
     ag2, cc2 = extract.dados_bancarios("junto à agência 1234, conta corrente 56789-0 do banco")
     check(ag2 == "1234" and cc2 == "56789-0", "agência/conta sem 'nº' (LEX)")
+    # período do dano material — NG usa "período de X a Y"; LEX "desde X até Y"
+    check(extract.periodo_dano("referente às cobranças feitas no período de 20/01/2017 a 07/10/2022.") == ("20/01/2017", "07/10/2022"), "período NG ('...de X a Y')")
+    check(extract.periodo_dano("cobranças desde 01/02/2018 até 05/06/2021") == ("01/02/2018", "05/06/2021"), "período LEX ('desde X até Y')")
+    check(extract.periodo_dano("sem datas de período aqui") == (None, None), "sem período → (None, None)")
 
 
 def a_socio_correcao():
