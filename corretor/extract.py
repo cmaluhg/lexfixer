@@ -50,6 +50,48 @@ def periodo_dano(texto):
     return (m.group(1), m.group(2)) if m else (None, None)
 
 
+def endereco_numero(logradouro):
+    """Há número da residência no trecho do logradouro? 'Nº 52' (LEX) ou ', 2122' (NG)."""
+    return bool(logradouro and re.search(r'\bn[ºo°]\.?\s*\d+|,\s*\d+', logradouro, re.I))
+
+
+def pedidos_sem_letra(paras):
+    """Conta pedidos SEM alínea que aparecem ANTES do primeiro item 'a)' na seção
+    DOS PEDIDOS, quando existe pelo menos um item com letra. Detecta o caso NG:
+    os pedidos de prioridade/cessação vêm sem 'a)', seguidos de 'a)', 'b)'..."""
+    ini = None
+    for i, p in enumerate(paras):  # âncora = título da seção de pedidos
+        u = _deb(p)
+        if "DOS PEDIDOS" in u or "DOS REQUERIMENTOS" in u:
+            ini = i + 1
+            break
+    if ini is None:  # sem título → introdução curta "..., requer:" (não a argumentação)
+        for i, p in enumerate(paras):
+            s = p.strip()
+            if len(s) <= 80 and s.endswith(":") and re.search(r'\brequer\b', s, re.I):
+                ini = i + 1
+                break
+    if ini is None:
+        return 0
+    fim = len(paras)
+    _fins = ("NESTES TERMOS", "TERMOS EM QUE", "PEDE DEFERIMENTO", "DA-SE A CAUSA",
+             "VALOR DA CAUSA", "PROTESTA PROVAR", "DO VALOR DA CAUSA")
+    for j in range(ini, len(paras)):
+        if any(k in _deb(paras[j]) for k in _fins):
+            fim = j
+            break
+    com = sem_antes = 0
+    for p in paras[ini:fim]:
+        s = p.strip()
+        if not s.endswith(";"):
+            continue
+        if re.match(r'^[a-z]\)', s):
+            com += 1
+        elif len(s) > 15 and com == 0:
+            sem_antes += 1  # pedido substantivo sem alínea, antes do primeiro 'a)'
+    return sem_antes if com > 0 else 0
+
+
 def dados_bancarios(texto):
     """Agência/conta — aceita 'agência 5042' e 'agência nº 5042' (kit NG)."""
     mag = re.search(r'ag[êe]ncia[^\d]{0,8}(\d[\d.\-]*)', texto, re.I)
@@ -99,10 +141,12 @@ def extrair_peticao(caminho_docx):
     d["cpf"] = mcpf.group(1).strip() if mcpf else None
     d["gen_brasileiro_marcado"] = "BRASILEIRO(A)" in texto
     d["gen_estadocivil_marcado"] = bool(re.search(r'(SOLTEIRO\(A\)|CASADO\(A\)|DIVORCIADO\(A\)|VI[ÚU]VO\(A\))', texto))
-    # endereço: procura "residente n. RUA X, Bairro:" e se tem número
-    mend = re.search(r'residente\s+n[ao]\s+(.+?),\s*Bairro:', texto)
+    # endereço: procura "residente n. RUA X, Bairro:" e se tem número.
+    # Aceita separador antes de "Bairro" com vírgula OU ponto (NG: "RUA GAIVOTA , 2122. Bairro:").
+    mend = re.search(r'residente\s+n[ao]\s+(.+?)\s*[,.]?\s*Bairro', texto)
     d["endereco_logradouro"] = mend.group(1).strip() if mend else None
-    d["endereco_tem_numero"] = bool(mend and re.search(r'\bN[ºo]\.?\s*\d+|,\s*\d+', mend.group(1)))
+    # número: "Nº 52" (LEX) ou número após vírgula "RUA X, 2122" (NG)
+    d["endereco_tem_numero"] = endereco_numero(mend.group(1)) if mend else False
 
     # dados bancários — aceita "agência 5042" e "agência nº 5042" (kit NG)
     d["agencia"], d["conta"] = dados_bancarios(texto)
@@ -129,6 +173,7 @@ def extrair_peticao(caminho_docx):
     # letras dos pedidos (sequência)
     letras = re.findall(r'(?m)^\s*([a-z])\)\s', texto)
     d["pedidos_letras"] = letras
+    d["pedidos_sem_letra"] = pedidos_sem_letra(paras)  # pedidos sem alínea antes de 'a)' (NG)
 
     # rubrica citada (heurística: expressão entre aspas curvas após "denominada de")
     mrub = re.search(r'denominada de\s*[”"“]?\s*([A-Z0-9ÁÉÍÓÚÂÊÔ /\.\-_]+?)[”"“]', texto)

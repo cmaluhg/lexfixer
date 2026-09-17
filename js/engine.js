@@ -120,9 +120,11 @@
     m = texto.match(/CPF sob o n[ºo]?\s*([\d.\-]+)/); d.cpf = m ? m[1].trim() : null;
     d.gen_brasileiro_marcado = texto.indexOf("BRASILEIRO(A)") >= 0;
     d.gen_estadocivil_marcado = /(SOLTEIRO\(A\)|CASADO\(A\)|DIVORCIADO\(A\)|VI[ÚU]VO\(A\))/.test(texto);
-    m = texto.match(/residente\s+n[ao]\s+([\s\S]+?),\s*Bairro:/);
+    // aceita separador antes de "Bairro" com vírgula OU ponto (NG: "RUA GAIVOTA , 2122. Bairro:")
+    m = texto.match(/residente\s+n[ao]\s+([\s\S]+?)\s*[,.]?\s*Bairro/);
     d.endereco_logradouro = m ? m[1].trim() : null;
-    d.endereco_tem_numero = !!(m && /\bN[ºo]\.?\s*\d+|,\s*\d+/.test(m[1]));
+    // número: "Nº 52" (LEX) ou número após vírgula "RUA X, 2122" (NG)
+    d.endereco_tem_numero = !!(m && /\bn[ºo°]\.?\s*\d+|,\s*\d+/i.test(m[1]));
     // aceita "agência 5042" e "agência nº 5042" / "conta corrente nº 402615-2" (kit NG)
     m = texto.match(/ag[êe]ncia[^\d]{0,8}(\d[\d.\-]*)/i); d.agencia = m ? m[1].trim() : null;
     m = texto.match(/conta\s+corrente[^\d]{0,8}(\d[\d.\-]*)/i); d.conta = m ? m[1].trim() : null;
@@ -139,6 +141,7 @@
     d.valor_repeticao_pedido = m ? num(m[1]) : null;
     d.marcador_prioridade = texto.indexOf("[PRIORIDADE]") >= 0;
     d.pedidos_letras = (texto.match(/(?:^|\n)\s*([a-z])\)\s/g) || []).map(function (x) { return x.trim()[0]; });
+    d.pedidos_sem_letra = pedidosSemLetra(paras);  // pedidos sem alínea antes de 'a)' (NG)
     m = texto.match(/denominada de\s*[”"“]?\s*([A-Z0-9ÁÉÍÓÚÂÊÔ /.\-_]+?)[”"“]/);
     d.rubrica_texto = m ? m[1].trim() : null;
     return d;
@@ -228,8 +231,11 @@
       ach.push(F(9, "Prioridade (idoso)", st, (idade != null ? "Não idoso (" + idade + ")." : "Idade não informada.") + (pet.marcador_prioridade ? " Marcador [PRIORIDADE] removido." : ""))); }
     ach.push(F(10, "Dano moral por extenso", pet.dano_moral_vazio ? "CORRIGIR" : "OK", pet.dano_moral_vazio ? "Estava vazio 'R$ 15.000,00 ()' — corrigido." : "OK."));
     const letras = pet.pedidos_letras || []; const esp = letras.map((_, i) => String.fromCharCode(97 + i));
-    let st11 = JSON.stringify(letras) === JSON.stringify(esp) ? "OK" : "CORRIGIR";
-    let m11 = st11 === "OK" ? "Letras em sequência." : "Sequência irregular: " + letras.join(",");
+    const semLetra = pet.pedidos_sem_letra || 0;
+    let st11, m11;
+    if (semLetra > 0) { st11 = "CORRIGIR"; m11 = semLetra + " pedido(s) SEM alínea antes de 'a)' (ex.: prioridade/cessação) — renumerar TODOS os pedidos em sequência (a, b, c, ...)."; }
+    else if (JSON.stringify(letras) !== JSON.stringify(esp)) { st11 = "CORRIGIR"; m11 = "Sequência irregular: " + letras.join(","); }
+    else { st11 = "OK"; m11 = "Letras em sequência."; }
     if (pet.valor_repeticao_pedido != null && plan.dobro != null && Math.abs(pet.valor_repeticao_pedido - plan.dobro) > 0.01 && Math.abs(pet.valor_repeticao_pedido - (plan.total || -1)) < 0.01) {
       st11 = "ATENCAO"; m11 += " | Pedido pede R$ " + pet.valor_repeticao_pedido + " (simples); dobro é R$ " + plan.dobro + " — confirmar."; }
     ach.push(F(11, "Valores nos pedidos", st11, m11));
@@ -430,6 +436,34 @@
     return /PRIORIDADE NA TRAMITA/.test(u) ||
            /TRAMITAC\w* PRIORITARI/.test(u) ||
            (/PRIORIDADE/.test(u) && /ESTATUTO DO IDOSO/.test(u));
+  }
+  // Conta pedidos SEM alínea que aparecem ANTES do primeiro item 'a)' na seção
+  // DOS PEDIDOS, quando existe pelo menos um item com letra (caso NG: prioridade/
+  // cessação sem 'a)', seguidos de 'a)', 'b)'...).
+  function pedidosSemLetra(paras) {
+    let ini = -1;
+    for (let i = 0; i < paras.length; i++) {  // âncora = título da seção de pedidos
+      const u = deburrUp(paras[i]);
+      if (u.indexOf("DOS PEDIDOS") >= 0 || u.indexOf("DOS REQUERIMENTOS") >= 0) { ini = i + 1; break; }
+    }
+    if (ini < 0) {  // sem título → introdução curta "..., requer:" (não a argumentação)
+      for (let i = 0; i < paras.length; i++) {
+        const s = (paras[i] || "").trim();
+        if (s.length <= 80 && s.endsWith(":") && /\brequer\b/i.test(s)) { ini = i + 1; break; }
+      }
+    }
+    if (ini < 0) return 0;
+    const fins = ["NESTES TERMOS", "TERMOS EM QUE", "PEDE DEFERIMENTO", "DA-SE A CAUSA", "VALOR DA CAUSA", "PROTESTA PROVAR", "DO VALOR DA CAUSA"];
+    let fim = paras.length;
+    for (let j = ini; j < paras.length; j++) { const u = deburrUp(paras[j]); if (fins.some(k => u.indexOf(k) >= 0)) { fim = j; break; } }
+    let com = 0, semAntes = 0;
+    for (let k = ini; k < fim; k++) {
+      const s = (paras[k] || "").trim();
+      if (!s.endsWith(";")) continue;
+      if (/^[a-z]\)/.test(s)) com++;
+      else if (s.length > 15 && com === 0) semAntes++;
+    }
+    return com > 0 ? semAntes : 0;
   }
   // Substitui o CORPO da seção de gratuidade (do título até a próxima seção) pelo texto
   // ADC 80 (Comum/JEC). A parte individual é preenchida com o socioeconômico do cliente;

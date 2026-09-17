@@ -176,6 +176,36 @@ def a_ng_kit():
     check(extract.periodo_dano("referente às cobranças feitas no período de 20/01/2017 a 07/10/2022.") == ("20/01/2017", "07/10/2022"), "período NG ('...de X a Y')")
     check(extract.periodo_dano("cobranças desde 01/02/2018 até 05/06/2021") == ("01/02/2018", "05/06/2021"), "período LEX ('desde X até Y')")
     check(extract.periodo_dano("sem datas de período aqui") == (None, None), "sem período → (None, None)")
+    # número da residência — NG usa "RUA X , 2122. Bairro:" (número após vírgula, ponto antes de Bairro)
+    check(extract.endereco_numero("RUA GAIVOTA , 2122") is True, "número após vírgula (NG, 'RUA X, 2122')")
+    check(extract.endereco_numero("RUA TAMARINDO, Nº 52") is True, "número com 'Nº' (LEX)")
+    check(extract.endereco_numero("RUA TAMARINDO") is False, "sem número → não marca presente")
+    # pedidos SEM alínea antes de 'a)' (NG: prioridade/cessação sem letra, depois a) b))
+    ng_ped = ["5. DOS PEDIDOS", "Por derradeiro, ante o exposto, requer:",
+              "A prioridade na tramitação processual, visto que o Requerente possui 71 anos, nos termos do artigo 1.048;",
+              "Que este Juízo digne-se em determinar a imediata cessação dos lançamentos ilícitos, sob pena de multa;",
+              "a) a citação da Requerida, na forma do art. 18 da lei 9.099/95, para contestar;",
+              "b) o deferimento da gratuidade de justiça, nos termos do art. 98 do CPC;",
+              "Nestes termos, pede deferimento."]
+    check(extract.pedidos_sem_letra(ng_ped) == 2, "NG: detecta 2 pedidos sem alínea antes de 'a)'")
+    lex_ped = ["3. DOS PEDIDOS", "Ante o exposto, requer:",
+               "a) a citação da parte Requerida;", "b) a inversão do ônus da prova;",
+               "c) a condenação em danos morais;", "Nestes termos, pede deferimento."]
+    check(extract.pedidos_sem_letra(lex_ped) == 0, "LEX: todos com alínea → 0 (não marca)")
+    todos_sem = ["DOS PEDIDOS", "requer:", "a cessação dos descontos;", "a devolução dos valores;", "pede deferimento."]
+    check(extract.pedidos_sem_letra(todos_sem) == 0, "todos sem alínea (estilo próprio) → 0 (não falso-positivo)")
+    # conferência ponto 11: pedidos sem alínea → CORRIGIR
+    op = {"sexo": "F", "nascimento": "01/01/1990", "numero_endereco": None}
+    pet = {"pedidos_letras": ["a", "b"], "pedidos_sem_letra": 2, "valor_causa": 30000.0,
+           "endereco_juizado": True, "endereco_vara_comum": False, "anp": False,
+           "periodo": (None, None), "escritorio": "NG"}
+    r = checks.conferir(pet, {"rubricas": []}, None, op)
+    p11 = next(a for a in r["achados"] if a["n"] == 11)
+    check(p11["status"] == "CORRIGIR" and "alínea" in p11["msg"], "ponto 11 = CORRIGIR quando há pedido sem alínea")
+    pet_ok = dict(pet, pedidos_sem_letra=0)
+    r2 = checks.conferir(pet_ok, {"rubricas": []}, None, op)
+    p11b = next(a for a in r2["achados"] if a["n"] == 11)
+    check(p11b["status"] == "OK", "ponto 11 = OK quando letras a,b em sequência e sem faltantes")
 
 
 def a_prioridade_idoso():

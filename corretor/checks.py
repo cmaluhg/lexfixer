@@ -134,8 +134,17 @@ def conferir(pet, plan, extrato, op):
     letras = pet.get("pedidos_letras") or []
     esperado = [chr(ord('a') + i) for i in range(len(letras))]
     seq_ok = letras == esperado
-    m11 = "Letras dos pedidos em sequência." if seq_ok else f"Sequência de letras irregular: {letras}"
-    st11 = OK if seq_ok else CORRIGIR
+    sem_letra = pet.get("pedidos_sem_letra") or 0
+    if sem_letra > 0:
+        st11 = CORRIGIR
+        m11 = (f"{sem_letra} pedido(s) SEM alínea antes de 'a)' (ex.: prioridade/cessação) — "
+               "renumerar TODOS os pedidos em sequência (a, b, c, ...).")
+    elif not seq_ok:
+        st11 = CORRIGIR
+        m11 = f"Sequência de letras irregular: {letras}"
+    else:
+        st11 = OK
+        m11 = "Letras dos pedidos em sequência."
     vrep = pet.get("valor_repeticao_pedido")
     if vrep is not None and dobro is not None and abs(vrep - dobro) > 0.01 and abs(vrep - (total or -1)) < 0.01:
         st11 = ATENCAO
