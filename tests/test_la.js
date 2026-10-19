@@ -83,4 +83,24 @@ assert.match(t3, /^b\) A repetição do indébito;/m);
 assert.match(t3, /^c\) juros e correção/m);
 assert.match(t3, /^d\) a prioridade na tramitação/m);
 assert.match(t3, /^e\) a condenação em custas e honorários/m);
+
+// gratuidade (modelo PARC CRED PESS): seção omitida pelo gerador (2.1 → 2.3) é criada como 2.2
+const doc3 = [
+  p("AO JUÍZO DE DIREITO DA __ª VARA CÍVEL DA COMARCA DE MANAUS/AM."),
+  p("2.PRELIMINARMENTE"), p("2.1. DOS ASPECTOS RELATIVOS À PRESENTE DEMANDA"), p("Corpo 2.1."),
+  p("2.3. DA PRESCRIÇÃO DECENAL"), p("Corpo 2.3."), p("3. DO MÉRITO"), p("Corpo."),
+].join("");
+const ctx3 = { sexo: "M", nascimento: "01/01/1990", idade: 36, idoso: false, alvo_vara_comum: true, grat_comum: true,
+  socio_texto: "Atualmente, o(a) autor(a) é operador de empilhadeira, com renda de 2500 reais.", valores: [] };
+const ts4 = L.paraTextos(L.corrigir(doc3, "", ctx3).doc), t4 = ts4.join("\n");
+const g = ts4.findIndex(x => /^2\.2\. DO PEDIDO DE JUSTIÇA GRATUITA \(COMUM\)$/.test(x));
+assert.ok(g > ts4.findIndex(x => /^Corpo 2\.1/.test(x)) && g < ts4.findIndex(x => /^2\.3\./.test(x)), "2.2 fora do lugar");
+assert.match(t4, /^A gratuidade da justiça garante/m);
+assert.match(t4, /dois mil e quinhentos reais\), de modo que a imposição das despesas processuais comprometeria/);
+// título existente com versão errada: "(ESPECIAL)" vira "(COMUM)" — e não duplica
+const doc4 = doc3.replace(p("2.3. DA PRESCRIÇÃO DECENAL"), p("2.2. DO PEDIDO DE JUSTIÇA GRATUITA (ESPECIAL)") + p("Ainda que o acesso...") + p("2.3. DA PRESCRIÇÃO DECENAL"));
+const t5 = L.paraTextos(L.corrigir(doc4, "", ctx3).doc).join("\n");
+assert.strictEqual((t5.match(/DO PEDIDO DE JUSTIÇA GRATUITA/g) || []).length, 1);
+assert.match(t5, /2\.2\. DO PEDIDO DE JUSTIÇA GRATUITA \(COMUM\)/);
+assert.ok(!/Ainda que o acesso/.test(t5));
 console.log("OK — test_la.js");

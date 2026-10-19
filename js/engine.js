@@ -535,8 +535,31 @@
   function atualizarGratuidade(xml, comum, socioTexto, log) {
     const re = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g; let m; const blocks = [];
     while ((m = re.exec(xml))) blocks.push({ ini: m.index, fim: m.index + m[0].length, tag: m[0] });
-    const hi = blocks.findIndex(b => ehHdrGratuidade(textoDoPara(b.tag)));
-    if (hi < 0) { log.push("⚠️ Gratuidade (ADC 80) NÃO inserida — seção 'DO PEDIDO DE JUSTIÇA GRATUITA' não encontrada. Inserir manualmente."); return xml; }
+    let hi = blocks.findIndex(b => ehHdrGratuidade(textoDoPara(b.tag)));
+    const sufixo = comum ? "(COMUM)" : "(ESPECIAL)";
+    if (hi < 0) {
+      // o gerador às vezes omite a seção inteira (blocos [#SE_FORO_...] vazios): cria o título
+      // logo após a seção 2.1 (antes do próximo título), como no modelo da peça.
+      const ts = blocks.map(b => textoDoPara(b.tag).trim());
+      const i21 = ts.findIndex(t => /^2\.1\.?\s/.test(t));
+      let prox = -1;
+      if (i21 >= 0) for (let j = i21 + 1; j < ts.length; j++) { if (isHeading(ts[j])) { prox = j; break; } }
+      if (prox < 0) { log.push("⚠️ Gratuidade (ADC 80) NÃO inserida — seção 'DO PEDIDO DE JUSTIÇA GRATUITA' e seção 2.1 não encontradas. Inserir manualmente."); return xml; }
+      const num = "2." + (parseInt(ts[i21].split(".")[1], 10) + 1) + ".";
+      const novoHdr = para(PPR_B, RPR_B, num + " DO PEDIDO DE JUSTIÇA GRATUITA " + sufixo);
+      xml = xml.slice(0, blocks[prox].ini) + novoHdr + vazio() + xml.slice(blocks[prox].ini);
+      log.push("Seção " + num + " DO PEDIDO DE JUSTIÇA GRATUITA não existia na peça — criada após a 2.1.");
+      return atualizarGratuidade(xml, comum, socioTexto, log);
+    }
+    // título com versão errada ("(ESPECIAL)" × "(COMUM)") → acerta o sufixo
+    if (/\((ESPECIAL|COMUM)\)/.test(textoDoPara(blocks[hi].tag)) && textoDoPara(blocks[hi].tag).indexOf(sufixo) < 0) {
+      const t = blocks[hi].tag.replace(/\((ESPECIAL|COMUM)\)/, sufixo);
+      if (t !== blocks[hi].tag) {  // sufixo partido em runs: deixa como está
+        xml = xml.slice(0, blocks[hi].ini) + t + xml.slice(blocks[hi].fim);
+        log.push("Título da gratuidade ajustado para " + sufixo);
+        return atualizarGratuidade(xml, comum, socioTexto, log);
+      }
+    }
     let nj = -1;
     for (let j = hi + 1; j < blocks.length; j++) { if (isHeading(textoDoPara(blocks[j].tag))) { nj = j; break; } }
     const ini = blocks[hi].fim;
@@ -548,9 +571,12 @@
       .replace(new RegExp(N + "\\s+(a|e|até)\\s+(?=(?:\\d{1,3}(?:\\.\\d{3})+|\\d+)(?:,\\d{2})?\\s+reais\\b)", "g"), (m, n, c, sep) => "R$ " + n + (c || ",00") + " " + sep + " ")
       .replace(new RegExp(N + "\\s+reais\\b", "g"), (m, n, c) => "R$ " + n + (c || ",00")) : "";
     const partes = []; let socioEmitido = false;
-    for (const p of (comum ? GRAT_COMUM : GRAT_JEC)) {
+    const versao = comum ? GRAT_COMUM : GRAT_JEC;
+    // modelo: "[TEXTO_SOCIO], de modo que ..." — o fecho vem do 2º parágrafo individual
+    const fecho = versao.filter(p => p.ind).pop().t.replace(/^[\s\S]*?(de modo que)/, "$1");
+    for (const p of versao) {
       if (p.ind) {
-        if (socio) { if (!socioEmitido) { partes.push(paraGrat(socio, false)); socioEmitido = true; } }
+        if (socio) { if (!socioEmitido) { partes.push(paraGrat(/de modo que/i.test(socio) ? socio : socio.replace(/[\s.;,]+$/, "") + ", " + fecho, false)); socioEmitido = true; } }
         else partes.push(paraGrat(p.t, true));  // sem socio → "(preencher)" em amarelo
       } else partes.push(paraGrat(p.t, false));
     }
