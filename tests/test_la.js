@@ -52,4 +52,35 @@ assert.match(t, /R\$ 15\.305,82 \(quinze mil trezentos e cinco reais e oitenta e
 const t2 = L.paraTextos(L.corrigir(r.doc, "", ctx).doc).join("\n");
 assert.strictEqual((t2.match(/DA PRIORIDADE NA TRAMITA/g) || []).length, 1);
 assert.strictEqual((t2.match(/\) a prioridade na tramita/g) || []).length, 1);
+
+// gerador põe "2.x.DA PRIORIDADE..." no CABEÇALHO (caso real, out/2026): sai dali e vai antes do MÉRITO
+const doc2 = [
+  p("AO JUÍZO DE DIREITO DA ª VARA CÍVEL DA COMARCA DE MANAUS/AM."), p(""),
+  p("COM PEDIDO DE JUSTIÇA GRATUITA"), p("COM PEDIDO DE INVERSÃO DO ÔNUS DA PROVA"),
+  p("DISPENSA DE AUDIÊNCIA DE CONCILIAÇÃO (ART. 319, VII, CPC)"),
+  p("2.x.DA PRIORIDADE NA TRAMITAÇÃO PROCESSUAL — REQUERENTE IDOSO 63 ANOS."), p(""), p(""),
+  p("Nos termos do artigo 71 da Lei nº 10.741/2003 (Estatuto do Idoso) e artigo 1.048, inciso I, do Código de Processo Civil, toda pessoa com idade igual ou superior a 60 (Sessenta) anos tem direito à prioridade na tramitação dos processos judiciais."), p(""),
+  p("No presente caso o Requerente, possui 63 anos, conforme comprovado por cópia do documento de identidade anexado aos autos."), p(""),
+  p("Dessa forma, requer, com fundamento no artigo supracitado, a tramitação prioritária do presente feito, assegurando à parte autora o direito legalmente garantido."), p(""),
+  p("FULANO, BRASILEIRO(A), vem, respeitosamente, perante"),
+  p("2.1. DO PEDIDO DE JUSTIÇA GRATUITA"), p("Corpo."), p("3. DO MÉRITO"), p("Corpo."),
+  p("4. DOS PEDIDOS"), p("a) a citação;"), p("c)A repetição do indébito;"),  // sem espaço e letra pulada
+  p("d) juros e correção do dano moral desde o arbitramento;"),
+  // letra em run separada, com formatação diferente
+  "<w:p><w:r>" + R2 + "<w:t>e</w:t></w:r><w:r>" + R + "<w:t xml:space=\"preserve\">) a condenação em custas e honorários advocatícios de 20%, acrescidos de juros;</w:t></w:r></w:p>",
+  p("Nestes termos,"),
+].join("");
+const ctx2 = Object.assign({}, ctx, { sexo: "M", nascimento: "01/01/1963", idade: 63 });
+const ts3 = L.paraTextos(L.corrigir(doc2, "", ctx2).doc), t3 = ts3.join("\n");
+const q = re => ts3.findIndex(x => re.test(x));
+if (process.env.DEBUG) console.log(ts3.map((x, i) => i + ": " + x.slice(0, 90)).join("\n"), L.corrigir(doc2, "", ctx2).log);
+assert.strictEqual((t3.match(/PRIORIDADE NA TRAMITA/g) || []).length, 1, "tópico duplicado ou ausente");
+assert.ok(!/2\.x\./.test(t3) && !/No presente caso o Requerente/.test(t3), "bloco do cabeçalho não removido");
+assert.ok(q(/^2\.2\. DA PRIORIDADE/) > q(/^2\.1\./) && q(/^2\.2\. DA PRIORIDADE/) < q(/^3\. DO MÉRITO/));
+assert.ok(q(/PRIORIDADE PROCESSUAL: IDOSO/) < q(/respeitosamente/), "cabeçalho sem o pedido de prioridade");
+// pedido entra após o item de juros, não no de honorários
+assert.match(t3, /^b\) A repetição do indébito;/m);
+assert.match(t3, /^c\) juros e correção/m);
+assert.match(t3, /^d\) a prioridade na tramitação/m);
+assert.match(t3, /^e\) a condenação em custas e honorários/m);
 console.log("OK — test_la.js");

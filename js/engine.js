@@ -640,9 +640,32 @@
     const blocos = () => { const re = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g; let m; const b = [];
       while ((m = re.exec(xml))) b.push({ ini: m.index, fim: m.index + m[0].length, t: textoDoPara(m[0]).trim() }); return b; };
     let bs = blocos();
+    // o gerador às vezes põe o tópico ("2.x.DA PRIORIDADE NA TRAMITAÇÃO...") no cabeçalho
+    // ou fora da seção 2: remove título + corpo e reinsere no lugar certo abaixo.
+    const mer = () => bs.findIndex(b => isHeading(b.t) && /^\d+\.?\s+DO MERITO\b/.test(deburrUp(b.t)));
+    // título = sem palavra minúscula (o "x" de "2.x." não conta)
+    const hi = bs.findIndex(b => b.t.length < 200 && !/[a-zà-ÿ]{2,}/.test(b.t) && /PRIORIDADE NA TRAMITA|TRAMITACAO PRIORITARIA/.test(deburrUp(b.t)));
+    if (hi >= 0) {
+      const mi = mer();
+      const sec2 = bs.findIndex(b => /^2\.\d+\.?\s/.test(b.t));
+      const noLugar = isHeading(bs[hi].t) && sec2 >= 0 && hi > sec2 && (mi < 0 || hi < mi);
+      if (!noLugar) {
+        let fimBloco = hi;
+        for (let j = hi + 1; j < bs.length; j++) {
+          const t = bs[j].t;
+          if (isHeading(t) || /respeitosamente/i.test(t)) break;
+          if (!t) continue;
+          if (!/idos|prioridade|priorit[áa]ri|possui \d+ anos|sessenta/i.test(t)) break;
+          fimBloco = j;
+        }
+        xml = xml.slice(0, bs[hi].ini) + xml.slice(bs[fimBloco].fim);
+        log.push("Tópico de prioridade fora do lugar (\"" + bs[hi].t.slice(0, 50) + "…\") removido e reinserido antes de DO MÉRITO");
+        bs = blocos();
+      }
+    }
     const temTopico = bs.some(b => isHeading(b.t) && /PRIORIDADE/.test(deburrUp(b.t)));
     if (!temTopico) {
-      const mi = bs.findIndex(b => isHeading(b.t) && /^\d+\.?\s+DO MERITO\b/.test(deburrUp(b.t)));
+      const mi = mer();
       if (mi < 0) log.push("⚠️ Tópico DA PRIORIDADE NÃO inserido — título 'DO MÉRITO' não encontrado. Inserir manualmente.");
       else {
         const sec = parseInt(bs[mi].t, 10) - 1;  // "3. DO MÉRITO" → preliminares = seção 2
@@ -661,11 +684,13 @@
     const fins = ["NESTES TERMOS", "TERMOS EM QUE", "PEDE DEFERIMENTO", "DA-SE A CAUSA", "PROTESTA PROVAR", "DO VALOR DA CAUSA"];
     let fim = bs.length;
     for (let j = pi + 1; j < bs.length; j++) if (fins.some(k => deburrUp(bs[j].t).indexOf(k) >= 0)) { fim = j; break; }
-    const itens = bs.slice(pi + 1, fim).filter(b => /^[a-z]\)\s/.test(b.t));
+    const itens = bs.slice(pi + 1, fim).filter(b => /^[a-z]\)/.test(b.t));
     if (itens.some(b => /prioridade/i.test(b.t.replace("[PRIORIDADE]", "")))) return xml;  // pedido já existe (o marcador não conta)
     if (!itens.length) { log.push("⚠️ Pedido de prioridade NÃO inserido — itens a), b)... não encontrados em DOS PEDIDOS. Inserir manualmente."); return xml; }
-    const juros = itens.filter(b => /Súmulas 362 e 54|juros/i.test(b.t)).pop();
-    const apos = juros || itens[itens.length - 1];
+    // item de juros/correção do dano — nunca o de honorários (que também cita "juros")
+    const semHon = itens.filter(b => !/honor[áa]rios|sucumb/i.test(b.t));
+    const juros = semHon.find(b => /Súmulas 362 e 54/i.test(b.t)) || semHon.filter(b => /juros/i.test(b.t)).pop();
+    const apos = juros || semHon[semHon.length - 1] || itens[itens.length - 1];
     const letra = String.fromCharCode(itens[itens.length - 1].t.charCodeAt(0) + 1);  // renumerarPedidos ajusta depois
     const ped = letra + ") a prioridade na tramitação processual, visto que a parte requerente possui " + idade + " (" + ext + ") anos, nos termos do artigo 1.048, inciso I, do Código de Processo Civil, bem como do artigo 71, caput, da Lei nº 10.741/2003 (Estatuto do Idoso);";
     xml = xml.slice(0, apos.fim) + vazio() + para(PPR_ITEM, RPR, ped) + xml.slice(apos.fim);
@@ -681,6 +706,34 @@
       xml = xml.replace(re, function (m, a, b, c) { if (b.trim().toLowerCase() === correto.toLowerCase()) return m; changed = true; return a + correto + c; });
       if (changed) log.push("Extenso corrigido para R$ " + alvo + " (" + correto + ")");
     }
+    return xml;
+  }
+  // LA: renumera por PARÁGRAFO — a letra pode vir em run separada ("i" | ") a condenação")
+  // ou sem espaço ("f)A"). Reescreve cada rótulo como "x) " na primeira run do item.
+  function renumerarPedidosLA(xml, log) {
+    const re = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g; let m; const bs = [];
+    while ((m = re.exec(xml))) bs.push({ ini: m.index, fim: m.index + m[0].length, tag: m[0], t: textoDoPara(m[0]) });
+    const pi = bs.findIndex(b => /DOS PEDIDOS|DOS REQUERIMENTOS/.test(deburrUp(b.t)) && b.t.length < 80);
+    if (pi < 0) return xml;
+    const fins = ["NESTES TERMOS", "TERMOS EM QUE", "PEDE DEFERIMENTO", "DA-SE A CAUSA", "PROTESTA PROVAR", "DO VALOR DA CAUSA"];
+    let k = 0, mudou = false; const out = [];
+    for (let j = pi + 1; j < bs.length; j++) {
+      if (fins.some(f => deburrUp(bs[j].t).indexOf(f) >= 0)) break;
+      const lab = bs[j].t.match(/^\s*([a-z])\)\s*/); if (!lab) continue;
+      const novo = String.fromCharCode(97 + k++);
+      if (lab[1] === novo && / $/.test(lab[0])) continue;
+      mudou = true;
+      let corta = lab[0].length, primeiro = true;
+      const tag = bs[j].tag.replace(/(<w:t(?:\s[^>]*)?>)([^<]*)(<\/w:t>)/g, function (mm, a, t, c) {
+        let pre = "";
+        if (primeiro && t.length) { pre = novo + ") "; primeiro = false; }
+        if (corta > 0) { const n = Math.min(corta, t.length); t = t.slice(n); corta -= n; }
+        return (pre ? a.replace(/^<w:t(?:\s[^>]*)?>/, '<w:t xml:space="preserve">') : a) + pre + t + c;
+      });
+      out.push({ b: bs[j], tag });
+    }
+    for (let q = out.length - 1; q >= 0; q--) xml = xml.slice(0, out[q].b.ini) + out[q].tag + xml.slice(out[q].b.fim);
+    if (mudou) log.push("Pedidos renumerados");
     return xml;
   }
   function renumerarPedidos(xml, log) {
@@ -863,6 +916,8 @@
       // LA: tópico e pedido conferidos em separado (um pode existir sem o outro)
       xml = completarCabecalho(xml, ctx.idoso, log);
       if (ctx.idoso) xml = inserirPrioridadeLA(xml, ctx.nascimento, ctx.idade, log);
+      else if (/PRIORIDADE NA TRAMITA/.test(deburrUp(paraTextos(xml).join("\n"))))
+        log.push("⚠️ A peça traz tópico de prioridade de idoso, mas a idade informada não é 60+ — conferir a data de nascimento.");
     } else {
       // Idoso: só inserir tópico/pedido de prioridade se a peça AINDA não os tiver
       // (o NG já traz o tópico 2.7 e o pedido — não duplicar).
@@ -873,7 +928,7 @@
     }
     xml = removerMarcador(xml, log);
     xml = neutralizarLinguagem(xml, log);
-    xml = renumerarPedidos(xml, log);
+    xml = ehLA ? renumerarPedidosLA(xml, log) : renumerarPedidos(xml, log);
     xml = revisar(xml, log);   // ortografia/tipografia + latim em itálico + avisos
     let styles = stylesXml;
     [xml, styles] = formatarTudo(xml, styles);
