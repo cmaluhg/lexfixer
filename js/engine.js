@@ -30,15 +30,19 @@
       const g = n % 1000; n = Math.floor(n / 1000);
       if (g) {
         const texto = ate999(g);
-        if (i === 1) partes.unshift(g === 1 ? "mil" : texto + " mil");
-        else if (i >= 2) partes.unshift(texto + " " + (g === 1 ? escala[i][0] : escala[i][1]));
-        else partes.unshift(texto);
+        if (i === 1) partes.unshift({ g, t: g === 1 ? "mil" : texto + " mil" });
+        else if (i >= 2) partes.unshift({ g, t: texto + " " + (g === 1 ? escala[i][0] : escala[i][1]) });
+        else partes.unshift({ g, t: texto });
       }
       i++;
     }
-    const p = partes.filter(Boolean);
-    if (p.length <= 1) return p.join(" e ");
-    return p.slice(0, -1).join(", ") + " e " + p[p.length - 1];
+    // "e" antes do último grupo só se ele for < 100 ou centena redonda:
+    // "quinze mil e quinhentos", mas "quinze mil trezentos e cinco".
+    return partes.map(function (p, k) {
+      if (k === 0) return p.t;
+      if (k < partes.length - 1) return ", " + p.t;
+      return (p.g < 100 || p.g % 100 === 0 ? " e " : " ") + p.t;
+    }).join("");
   }
   LEX.extenso = function (valor) {
     if (typeof valor === "string") {
@@ -310,12 +314,72 @@
     return ptag.slice(0, ins) + extra + ptag.slice(ins);
   }
 
-  function corrigirGenero(xml, sexo, log) {
+  function corrigirGenero(xml, sexo, log, generico) {
     const fem = String(sexo || "").toUpperCase().charAt(0) === "F";
+    if (generico) {
+      // "BRASILEIRO(" | "A)" ou "BRASILEIRO" | "(A)" em runs com formatação diferente → junta na 1ª run
+      const FRONT = "(<\\/w:t><\\/w:r><w:r\\b[^>]*>(?:<w:rPr>(?:(?!<\\/w:rPr>)[\\s\\S])*<\\/w:rPr>)?<w:t[^>]*>)";
+      xml = xml.replace(new RegExp("([A-Za-zÀ-ÿ])\\(" + FRONT + "([aA])\\)", "g"), "$1($3)$2")
+        .replace(new RegExp("([A-Za-zÀ-ÿ])" + FRONT + "\\(([aA])\\)", "g"), "$1($3)$2");
+    }
     const map = fem
       ? { "BRASILEIRO(A)": "BRASILEIRA", "SOLTEIRO(A)": "SOLTEIRA", "CASADO(A)": "CASADA", "DIVORCIADO(A)": "DIVORCIADA", "VIÚVO(A)": "VIÚVA", "VIUVO(A)": "VIUVA" }
       : { "BRASILEIRO(A)": "BRASILEIRO", "SOLTEIRO(A)": "SOLTEIRO", "CASADO(A)": "CASADO", "DIVORCIADO(A)": "DIVORCIADO", "VIÚVO(A)": "VIÚVO", "VIUVO(A)": "VIUVO" };
     for (const k in map) { if (xml.indexOf(k) >= 0) { xml = xml.split(k).join(map[k]); log.push("Qualificação: " + k + "→" + map[k]); } }
+    if (!generico) return xml;
+    // LA: demais marcas "(a)" — portador(a), inscrito(a), domiciliado(a), o(a), autor(a)...
+    const vistos = new Set();
+    xml = xml.replace(/(<w:t[^>]*>)([^<]*)(<\/w:t>)/g, function (m, a, t, c) {
+      return a + t.replace(/([A-Za-zÀ-ÿ]+)\(([aA])\)/g, function (mm, w, s) {
+        vistos.add(mm);
+        if (!fem) return w;
+        return (/[oO]$/.test(w) ? w.slice(0, -1) : w) + s;
+      }) + c;
+    });
+    if (vistos.size) log.push("Gênero ajustado (" + (fem ? "feminino" : "masculino") + "): " + [...vistos].join(", "));
+    return xml;
+  }
+  // LA: todo "R$ X" no corpo (fora de tabelas) ganha/corrige o valor por extenso.
+  function extensosCorpo(xml, log) {
+    const RE_V = /(R\$\s*(\d{1,3}(?:\.\d{3})+|\d+)(,\d{2})?)(\s*\(([^)]*)\))?/g;
+    const norm = x => x.toLowerCase().replace(/,/g, " ").replace(/\s+/g, " ").trim();
+    const ajustes = [];
+    function corrigirPara(p) {
+      const re = /(<w:t[^>]*>)([^<]*)(<\/w:t>)/g; const ts = []; let m;
+      while ((m = re.exec(p))) ts.push(m[2]);
+      if (!ts.some(t => t.indexOf("R$") >= 0)) return p;
+      // citação de jurisprudência (recuo à esquerda) não se altera
+      const ind = p.match(/<w:pPr>[\s\S]*?<w:ind\b[^>]*w:left="(\d+)"/);
+      if (ind && +ind[1] >= 1000) return p;
+      let k = -1;
+      return p.replace(re, function (mm, a, t, c) {
+        k++;
+        const resto = ts.slice(k + 1).join("");
+        const novo = t.replace(RE_V, function (v, rs, int, cent, par, dentro, off, s) {
+          const valor = num(int + (cent || ",00")); if (!valor) return v;
+          const correto = LEX.extenso(valor);
+          if (par == null) {
+            // parêntese ou resto do número ("R$ 1" + ".000,00") numa run seguinte: não mexe
+            if (/^\s*(\(|[.,]?\d|mil\b|milh|bilh|trilh)/i.test(s.slice(off + v.length) + resto)) return v;
+            ajustes.push(rs.trim() + " (incluído)");
+            return rs + " (" + correto + ")";
+          }
+          // corrige só o que parece extenso (vazio ou com "reais/real/centavo")
+          if ((!dentro.trim() || /\b(reais|real|centavos?)\b/i.test(dentro)) && norm(dentro) !== norm(correto)) {
+            ajustes.push(rs.trim() + " (corrigido)");
+            return rs + " (" + correto + ")";
+          }
+          return v;
+        });
+        return a + novo + c;
+      });
+    }
+    // processa só o que está fora de <w:tbl> (valores de tabela não levam extenso)
+    xml = xml.split(/(<w:tbl>[\s\S]*?<\/w:tbl>)/).map(function (seg) {
+      if (seg.indexOf("<w:tbl>") === 0) return seg;
+      return seg.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g, corrigirPara);
+    }).join("");
+    if (ajustes.length) log.push("Valores por extenso: " + ajustes.join("; "));
     return xml;
   }
   function inserirNumero(xml, numero, log) {
@@ -477,7 +541,12 @@
     for (let j = hi + 1; j < blocks.length; j++) { if (isHeading(textoDoPara(blocks[j].tag))) { nj = j; break; } }
     const ini = blocks[hi].fim;
     const fim = nj >= 0 ? blocks[nj].ini : blocks[hi].fim;
-    const socio = socioTexto ? limparSocio(socioTexto) : "";
+    // "2.500 reais" → "R$ 2.500,00"; faixa "2.500 a 5.000 reais" → "R$ 2.500,00 a R$ 5.000,00"
+    // (o extenso entra depois, em extensosCorpo)
+    const N = "(?<![\\d.,]|R\\$\\s?)(\\d{1,3}(?:\\.\\d{3})+|\\d+)(,\\d{2})?";
+    const socio = socioTexto ? limparSocio(socioTexto)
+      .replace(new RegExp(N + "\\s+(a|e|até)\\s+(?=(?:\\d{1,3}(?:\\.\\d{3})+|\\d+)(?:,\\d{2})?\\s+reais\\b)", "g"), (m, n, c, sep) => "R$ " + n + (c || ",00") + " " + sep + " ")
+      .replace(new RegExp(N + "\\s+reais\\b", "g"), (m, n, c) => "R$ " + n + (c || ",00")) : "";
     const partes = []; let socioEmitido = false;
     for (const p of (comum ? GRAT_COMUM : GRAT_JEC)) {
       if (p.ind) {
@@ -561,6 +630,46 @@
     const letra = proxLetra(xml);
     const ped = letra + ") a prioridade na tramitação processual, visto que a parte requerente possui " + idade + " (" + ext + ") anos, nos termos do artigo 1.048, inciso I, do Código de Processo Civil, bem como do artigo 71, caput, da Lei nº 10.741/2003 (Estatuto do Idoso);";
     for (const anc of ["conforme Súmulas 362 e 54 do STJ;", "Súmulas 362 e 54 do STJ;"]) { const [x2, ok] = inserirApos(xml, anc, para(PPR_ITEM, RPR, ped)); if (ok) { xml = x2; log.push("Inserido pedido de prioridade (" + letra + ")"); break; } }
+    return xml;
+  }
+  // LA: tópico ANTES do título "N. DO MÉRITO" (fim das preliminares) e pedido DENTRO de
+  // "DOS PEDIDOS" (após o item de juros; senão após o último item com letra). Cada parte
+  // só é inserida se ainda faltar; se não achar onde, avisa em vez de inserir solto.
+  function inserirPrioridadeLA(xml, nasc, idade, log) {
+    const ext = LEX.extenso(idade).replace(" reais", "").replace(" real", "");
+    const blocos = () => { const re = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g; let m; const b = [];
+      while ((m = re.exec(xml))) b.push({ ini: m.index, fim: m.index + m[0].length, t: textoDoPara(m[0]).trim() }); return b; };
+    let bs = blocos();
+    const temTopico = bs.some(b => isHeading(b.t) && /PRIORIDADE/.test(deburrUp(b.t)));
+    if (!temTopico) {
+      const mi = bs.findIndex(b => isHeading(b.t) && /^\d+\.?\s+DO MERITO\b/.test(deburrUp(b.t)));
+      if (mi < 0) log.push("⚠️ Tópico DA PRIORIDADE NÃO inserido — título 'DO MÉRITO' não encontrado. Inserir manualmente.");
+      else {
+        const sec = parseInt(bs[mi].t, 10) - 1;  // "3. DO MÉRITO" → preliminares = seção 2
+        let maxSub = 0;
+        bs.slice(0, mi).forEach(b => { const mm = b.t.match(/^(\d+)\.(\d+)\.?\s/); if (mm && +mm[1] === sec) maxSub = Math.max(maxSub, +mm[2]); });
+        const heading = sec + "." + (maxSub + 1) + ". DA PRIORIDADE NA TRAMITAÇÃO PROCESSUAL — REQUERENTE MAIOR DE 60 ANOS";
+        const corpo = "Nos termos do artigo 71 da Lei nº 10.741/2003 (Estatuto do Idoso) e artigo 1.048, inciso I, do Código de Processo Civil, toda pessoa com idade igual ou superior a 60 (sessenta) anos tem direito à prioridade na tramitação dos processos judiciais. A parte requerente, nascida em " + nasc + ", possui " + idade + " (" + ext + ") anos, conforme comprovado por cópia do documento de identidade anexado aos autos. Dessa forma, requer a tramitação prioritária do presente feito, assegurando à parte requerente o direito legalmente garantido.";
+        const bloco = para(PPR_B, RPR_B, heading) + vazio() + para(PPR_BODY, RPR, corpo) + vazio();
+        xml = xml.slice(0, bs[mi].ini) + bloco + xml.slice(bs[mi].ini);
+        log.push("Inserido tópico " + sec + "." + (maxSub + 1) + ". DA PRIORIDADE (antes de DO MÉRITO)");
+        bs = blocos();
+      }
+    }
+    const pi = bs.findIndex(b => /DOS PEDIDOS|DOS REQUERIMENTOS/.test(deburrUp(b.t)) && b.t.length < 80);
+    if (pi < 0) { log.push("⚠️ Pedido de prioridade NÃO inserido — seção 'DOS PEDIDOS' não encontrada. Inserir manualmente."); return xml; }
+    const fins = ["NESTES TERMOS", "TERMOS EM QUE", "PEDE DEFERIMENTO", "DA-SE A CAUSA", "PROTESTA PROVAR", "DO VALOR DA CAUSA"];
+    let fim = bs.length;
+    for (let j = pi + 1; j < bs.length; j++) if (fins.some(k => deburrUp(bs[j].t).indexOf(k) >= 0)) { fim = j; break; }
+    const itens = bs.slice(pi + 1, fim).filter(b => /^[a-z]\)\s/.test(b.t));
+    if (itens.some(b => /prioridade/i.test(b.t.replace("[PRIORIDADE]", "")))) return xml;  // pedido já existe (o marcador não conta)
+    if (!itens.length) { log.push("⚠️ Pedido de prioridade NÃO inserido — itens a), b)... não encontrados em DOS PEDIDOS. Inserir manualmente."); return xml; }
+    const juros = itens.filter(b => /Súmulas 362 e 54|juros/i.test(b.t)).pop();
+    const apos = juros || itens[itens.length - 1];
+    const letra = String.fromCharCode(itens[itens.length - 1].t.charCodeAt(0) + 1);  // renumerarPedidos ajusta depois
+    const ped = letra + ") a prioridade na tramitação processual, visto que a parte requerente possui " + idade + " (" + ext + ") anos, nos termos do artigo 1.048, inciso I, do Código de Processo Civil, bem como do artigo 71, caput, da Lei nº 10.741/2003 (Estatuto do Idoso);";
+    xml = xml.slice(0, apos.fim) + vazio() + para(PPR_ITEM, RPR, ped) + xml.slice(apos.fim);
+    log.push("Inserido pedido de prioridade em DOS PEDIDOS (após " + (juros ? "juros/correção" : "o último item") + ")");
     return xml;
   }
   function corrigirExtensos(xml, valores, log) {
@@ -730,25 +839,38 @@
     const log = [];
     const socioInfo = { pedido: false, ok: true };
     let xml = LEX.mergeRuns(docXml);
-    xml = corrigirGenero(xml, ctx.sexo, log);
+    const ehLA = detectarEscritorio(paraTextos(xml).join("\n")) === "LA";
+    // LA: marcas do corretor do Word partem "BRASILEIRO(" | "A)" em runs diferentes
+    if (ehLA) xml = LEX.mergeRuns(xml.replace(/<w:proofErr\b[^>]*\/>/g, ""));
+    xml = corrigirGenero(xml, ctx.sexo, log, ehLA);
     xml = inserirNumero(xml, ctx.numero_endereco, log);
     // Gratuidade: Luis Albert usa o tópico ADC 80 (versão conforme o foro); NG mantém o
     // comportamento anterior (socioeconômico no início da seção) — parâmetros do NG são outros.
     const _pJEC = /JUIZADO ESPECIAL/i.test(paraTextos(xml)[0] || "");
-    const _comum = ctx.alvo_vara_comum != null ? !!ctx.alvo_vara_comum : !_pJEC;
-    if (detectarEscritorio(paraTextos(xml).join("\n")) === "LA")
+    // LA: ctx.grat_comum (valor + datas dos descontos) decide a versão; senão segue o foro
+    const _comum = ctx.grat_comum != null ? !!ctx.grat_comum
+      : ctx.alvo_vara_comum != null ? !!ctx.alvo_vara_comum : !_pJEC;
+    if (ehLA) {
+      if (ctx.grat_motivo) log.push("Gratuidade — critério: " + ctx.grat_motivo);
       xml = atualizarGratuidade(xml, _comum, ctx.socio_texto, log);
-    else
+    } else
       xml = socioeconomico(xml, ctx.socio_texto, log, socioInfo);
     xml = danoMoralExtenso(xml, log);
     xml = corrigirExtensos(xml, ctx.valores || [], log);
+    if (ehLA) xml = extensosCorpo(xml, log);
     if (ctx.alvo_vara_comum != null) xml = ajustarEnderecamento(xml, ctx.alvo_vara_comum, log);
-    // Idoso: só inserir tópico/pedido de prioridade se a peça AINDA não os tiver
-    // (o NG já traz o tópico 2.7 e o pedido — não duplicar).
-    const _priJa = prioridadePresente(paraTextos(xml).join("\n"));
-    xml = completarCabecalho(xml, ctx.idoso && !_priJa, log);
-    if (ctx.idoso && !_priJa) xml = inserirItensIdoso(xml, ctx.nascimento, ctx.idade, log);
-    else if (ctx.idoso) log.push("Prioridade de idoso já constava na peça — mantida (não reinserida)");
+    if (ehLA) {
+      // LA: tópico e pedido conferidos em separado (um pode existir sem o outro)
+      xml = completarCabecalho(xml, ctx.idoso, log);
+      if (ctx.idoso) xml = inserirPrioridadeLA(xml, ctx.nascimento, ctx.idade, log);
+    } else {
+      // Idoso: só inserir tópico/pedido de prioridade se a peça AINDA não os tiver
+      // (o NG já traz o tópico 2.7 e o pedido — não duplicar).
+      const _priJa = prioridadePresente(paraTextos(xml).join("\n"));
+      xml = completarCabecalho(xml, ctx.idoso && !_priJa, log);
+      if (ctx.idoso && !_priJa) xml = inserirItensIdoso(xml, ctx.nascimento, ctx.idade, log);
+      else if (ctx.idoso) log.push("Prioridade de idoso já constava na peça — mantida (não reinserida)");
+    }
     xml = removerMarcador(xml, log);
     xml = neutralizarLinguagem(xml, log);
     xml = renumerarPedidos(xml, log);

@@ -333,11 +333,27 @@
     if (anp) alvoVara = true;
     else if (chk.temExc) alvoVara = true;
     else if (p.valor_causa != null) alvoVara = p.valor_causa > (p.escritorio === "NG" ? 64840 : 50000);  // LA: high ticket R$50k; NG: teto
+    // Gratuidade (LA): versão Comum se o foro já é Comum OU se o ÚLTIMO desconto tem mais
+    // de 5 anos (prescrição decenal) — exceto parc. cred., bx. ant. finan., título e seguro,
+    // que ficam no JEC. Só muda o tópico de gratuidade, não o endereçamento.
+    let gratComum = alvoVara, gratMotivo = null;
+    if (p.escritorio !== "NG") {
+      const datas = [p.periodo[1]].concat((pl.descontos || []).map(d => d.data)).filter(Boolean).map(paraData).filter(Boolean);
+      const ultimo = datas.length ? new Date(Math.max.apply(null, datas)) : null;
+      const limite = new Date(); limite.setFullYear(limite.getFullYear() - 5);
+      const rubs = deburr([p.rubrica_texto, (pl.rubricas || []).join(" "), state.peticao.nomeBase].join(" ")).replace(/[_.]/g, " ");
+      const excPrazo = /PARC\s*CRED|BX\s*ANT\s*FIN|TITULO|SEGURO/.test(rubs);
+      if (alvoVara) gratMotivo = "foro Vara Comum (valor/rubrica/ANP) → versão COMUM";
+      else if (ultimo && ultimo < limite && !excPrazo) { gratComum = true; gratMotivo = "último desconto em " + ultimo.toLocaleDateString("pt-BR") + " (mais de 5 anos) → versão COMUM"; }
+      else if (ultimo && ultimo < limite) gratMotivo = "último desconto há mais de 5 anos, mas rubrica é exceção ao prazo (parc. cred./bx. ant. finan./título/seguro) → versão JEC";
+      else if (ultimo) gratMotivo = "último desconto em " + ultimo.toLocaleDateString("pt-BR") + " (até 5 anos) e valor ≤ R$ 50.000 → versão JEC";
+    }
     // texto socioeconômico: o que estiver colado no campo tem prioridade; senão o da pasta
     const socioTxt = (($("#socioTexto") && $("#socioTexto").value) || "").trim() || state.socioTexto || "";
     const ctx = {
       sexo, nascimento: nasc, idade: chk.idade, idoso: chk.idoso,
       numero_endereco: numero, socio_texto: socioTxt, alvo_vara_comum: alvoVara,
+      grat_comum: gratComum, grat_motivo: gratMotivo,
       valores: [pl.total, pl.dobro, p.valor_causa, 15000],
     };
     const res = LEX.corrigir(state.peticao.doc, state.peticao.styles, ctx);
@@ -486,6 +502,11 @@
     return full;
   }
 
+  // "dd/mm/aaaa" ou "aaaa-mm-dd" → Date (null se inválida)
+  function paraData(s) {
+    let m = String(s).match(/^(\d{2})\/(\d{2})\/(\d{4})/); if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+    m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+  }
   function deburr(s) { return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " "); }
 
   function detectarNumero(logradouro, texto) {
