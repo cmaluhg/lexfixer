@@ -39,6 +39,12 @@ assert.strictEqual(r.sexo, null, "MRZ inválida não pode definir o sexo");
 r = parseIdentidade("IDBRA1I36278212413627821220<<<8\n8201205M3601014BRA<<<<<<<<<<<4\nSILVA<<JOAO<<<");
 assert.strictEqual(r.sexo, "M"); assert.strictEqual(r.dob, "20/01/1982");
 
+// 5c) caso real 1768: o "F" vinha do código da assinatura digital gravado no PDF
+//     ("...-84AF-182842F92A3B"), lido como MRZ. Código fictício no mesmo formato:
+r = parseIdentidade("Sexo / Sex E SNS 000.000.000-00 y Mo 20/01/1982 SIGN: 0A1B2C3D-0000-4000-8000-556677F12ABC EMISSAO");
+assert.strictEqual(r.sexo, null, "código de assinatura digital não pode virar sexo");
+assert.strictEqual(r.dob, "20/01/1982");
+
 // 6) CNH (sem campo sexo) → null, colaborador escolhe
 r = parseIdentidade("CARTEIRA NACIONAL DE HABILITACAO DATA NASCIMENTO 03/06/1992 FILIACAO ...");
 assert.strictEqual(r.sexo, null); assert.strictEqual(r.dob, "03/06/1992");
