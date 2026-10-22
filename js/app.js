@@ -170,6 +170,8 @@
       return;
     }
     state.arqs = arqs;
+    // novo cliente: o sexo do cliente anterior não pode ficar marcado
+    document.querySelectorAll("input[name=sexo]").forEach(el => { el.checked = false; });
     $("#dados").innerHTML = "Lendo arquivos…";
     try { await carregarPeticao(arqs.peticao); }
     catch (err) { mostrarFalhaPeticao(err); return; }
@@ -321,7 +323,9 @@
     if (!state.peticao) { alert("Carregue a pasta primeiro."); return; }
     const nasc = $("#nasc").value.trim();
     if (!nasc) { alert("Informe a data de nascimento (dd/mm/aaaa)."); return; }
-    const sexo = document.querySelector("input[name=sexo]:checked").value;
+    const selSexo = document.querySelector("input[name=sexo]:checked");
+    if (!selSexo) { alert("Selecione o sexo do(a) cliente (Feminino ou Masculino) conferindo o documento."); return; }
+    const sexo = selSexo.value;
     const numero = $("#numero").value.trim() || null;
     const p = state.peticao.data, pl = state.plan, ex = state.extrato;
     const op = { sexo, nascimento: nasc };
@@ -438,19 +442,29 @@
     while ((mm = re.exec(up))) { const v = norm(mm[1], mm[2], mm[3]); if (v) datas.push({ i: mm.index, v }); }
     const idxNasc = []; (up.match(/NASC|BIRTH/g) || []); let r2 = /NASC|BIRTH/g, m2; while ((m2 = r2.exec(up))) idxNasc.push(m2.index);
     const idxExp = []; let r3 = /EXPEDICAO|EMISSAO|VALIDADE|EXPIRY|ISSUE/g, m3; while ((m3 = r3.exec(up))) idxExp.push(m3.index);
-    const mrz = up.match(/\b(\d{2})(\d{2})(\d{2})\d?([MF])[A-Z<0-9]{3,}/);
+    // MRZ (CIN/passaporte): AAMMDD + dígito verificador + sexo. Só vale se o dígito
+    // conferir (ICAO 7-3-1) — sequência solta de números + F no lixo do OCR não passa.
+    const dvMrz = s => s.split("").reduce((t, c, i) => t + (+c) * [7, 3, 1][i % 3], 0) % 10;
+    let mrz = null; { const rm = /\b(\d{2})(\d{2})(\d{2})(\d)([MF])[A-Z<0-9]{3,}/g; let x;
+      while ((x = rm.exec(up))) if (dvMrz(x[1] + x[2] + x[3]) === +x[4] && +x[2] >= 1 && +x[2] <= 12 && +x[3] >= 1 && +x[3] <= 31) { mrz = x; break; } }
     let dob = null;
     // 1) data mais próxima de um rótulo de nascimento (a ordem do OCR varia entre
     //    colunas — na CNH o rótulo e a data podem sair separados pelo CPF)
     for (const n of idxNasc) { const c = datas.filter(d => Math.abs(d.i - n) < 60).sort((a, b) => Math.abs(a.i - n) - Math.abs(b.i - n))[0]; if (c) { dob = c.v; break; } }
     // 2) MRZ da CIN (AAMMDD + sexo)
-    if (!dob && mrz) dob = norm(mrz[3], mrz[2], mrz[1]);
+    if (!dob && mrz) dob = norm(mrz[3], mrz[2], mrz[1]);   // mrz[1..3] = AA, MM, DD
     // 3) fallback: uma data plausível que NÃO esteja colada em "expedição/validade"
     if (!dob) { const c = datas.find(d => !idxExp.some(e => Math.abs(d.i - e) < 45)); if (c) dob = c.v; }
-    // sexo
-    let s = up.match(/\bSEXO\b[^A-Z]{0,6}([FM])\b/) || up.match(/SEX[O]?\s*\/?\s*SEX?\s*[:\-]?\s*([FM])\b/);
-    const sexo = s ? s[1] : (mrz ? mrz[4] : null);
-    return { dob, sexo };
+    // sexo — fontes em ordem de confiança. No CIN o fundo de segurança vira "lixo" no OCR
+    // (letras F soltas): um F logo após o rótulo "SEXO/SEX" NÃO é confiável sozinho.
+    const fontes = [];
+    if (mrz) fontes.push(mrz[5]);                                                         // MRZ validada
+    const cpf = up.match(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\s+([FM])\b/); if (cpf) fontes.push(cpf[1]); // CIN: valor ao lado do CPF
+    const rot = up.match(/\bSEXO\s*[:\-]?\s*([FM])\b/) || up.match(/\bSEXO\s*\/\s*SEX\s*[:\-]?\s*([FM])\b/);
+    if (rot) fontes.push(rot[1]);                                                           // rótulo
+    const sexoConflito = new Set(fontes).size > 1;
+    const sexo = sexoConflito ? null : (fontes[0] || null);  // fontes divergentes → o colaborador escolhe
+    return { dob, sexo, sexoConflito };
   }
 
   // Worker de OCR com TODOS os assets no mesmo CDN (jsdelivr) que já carrega o app.
@@ -561,7 +575,8 @@
       if (partes.length) {
         msg = "✅ Detectado dos documentos: " + partes.join(" · ") + ". Confira e ajuste se necessário.";
         // CNH não traz o campo de sexo — avisa para selecionar manualmente.
-        if (r.dob && !r.sexo) msg += " ⚠️ O documento (ex.: CNH) não informa o sexo — selecione manualmente.";
+        if (r.sexoConflito) msg += " ⚠️ O documento traz indicações de sexo divergentes (leitura incerta) — selecione manualmente.";
+        else if (r.dob && !r.sexo) msg += " ⚠️ O documento (ex.: CNH) não informa o sexo — selecione manualmente.";
       } else if (usouOcr) {
         msg = "⚠️ Não consegui ler o documento por OCR. Verifique a conexão (o OCR baixa o idioma do jsdelivr) e a nitidez da foto; ou preencha manualmente.";
       } else {
