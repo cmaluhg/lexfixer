@@ -151,8 +151,9 @@
   // ou showDirectoryPicker). Identifica os kits, lê a petição e segue.
   async function processarArquivos(files, ignorados) {
     const arqs = identificar(files);
-    mostrarArquivos(arqs);
     $("#painel").classList.remove("hidden");
+    if (opAtual() === "RJ") { await carregarRJ(arqs, files); return; }   // LA RJ: monta a peça (não há petição a corrigir)
+    mostrarArquivos(arqs);
     if (!arqs.peticao) {
       const nomes = Array.from(files).map(f => f.name).join(", ") || "(nenhum)";
       let msg = "⚠️ Não encontrei a <b>petição (.docx)</b> entre os " + files.length + " arquivo(s) lidos:<br>" +
@@ -417,6 +418,196 @@
     $("#resultado").classList.remove("hidden");
     $("#resultado").scrollIntoView({ behavior: "smooth" });
   });
+
+  /* ---------- Operação: LA AM / LA RJ / NG ---------- */
+  // AM e NG seguem o fluxo de correção de sempre; RJ monta a peça a partir do modelo e dos documentos.
+  function opAtual() { const el = document.querySelector("input[name=op]:checked"); return el ? el.value : "AM"; }
+  function aplicarOp() {
+    const rj = opAtual() === "RJ";
+    $("#cardRJ").classList.toggle("hidden", !rj);
+    $("#btnGerar").classList.toggle("hidden", rj);
+    { const n = $("#numero"); if (n && n.parentElement) n.parentElement.classList.toggle("hidden", rj); }
+    try { localStorage.setItem("lexfixer.op", opAtual()); } catch (e) { /* preferência só de conveniência */ }
+    if (rj) atualizarStatusModelo();
+  }
+  try { const s = localStorage.getItem("lexfixer.op"); const el = s && document.querySelector('input[name=op][value="' + s + '"]'); if (el) el.checked = true; } catch (e) { /* sem storage: usa AM */ }
+  document.querySelectorAll("input[name=op]").forEach(el => el.addEventListener("change", function () {
+    aplicarOp();
+    if (state.arqs) $("#dados").innerHTML = "Operação alterada — selecione de novo os arquivos do cliente.";
+  }));
+
+  /* ---------- LA RJ: modelo guardado no navegador (não vai para o GitHub) ---------- */
+  function idb(modo, fn) {
+    return new Promise((ok, erro) => {
+      const r = indexedDB.open("lexfixer", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("modelos");
+      r.onerror = () => erro(r.error);
+      r.onsuccess = () => { const tx = r.result.transaction("modelos", modo); const q = fn(tx.objectStore("modelos")); tx.oncomplete = () => ok(q && q.result); tx.onerror = () => erro(tx.error); };
+    });
+  }
+  const modeloGet = () => idb("readonly", s => s.get("rj")).catch(() => null);
+  async function atualizarStatusModelo() {
+    const m = await modeloGet();
+    $("#rjModeloStatus").innerHTML = m
+      ? "<b>Modelo:</b> ✅ " + esc(m.nome) + " <span class='hint'>(guardado neste navegador em " + esc(m.data) + ")</span>"
+      : "<b>Modelo:</b> ⚠️ ainda não carregado neste computador — clique no botão abaixo e escolha o .docx do modelo RJ.";
+  }
+  { const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".docx"; inp.style.display = "none"; document.body.appendChild(inp);
+    $("#btnModeloRJ").addEventListener("click", () => inp.click());
+    inp.addEventListener("change", async function () {
+      const f = this.files && this.files[0]; this.value = ""; if (!f) return;
+      try {
+        const bytes = await lerBytes(f);
+        const xml = await (await JSZip.loadAsync(bytes)).file("word/document.xml").async("string");
+        if (xml.indexOf("[DADOS_CLIENTE]") < 0 || xml.indexOf("[RESUMO_DETALHES]") < 0) { alert("Este arquivo não parece ser o modelo RJ (não tem [DADOS_CLIENTE] e [RESUMO_DETALHES])."); return; }
+        await idb("readwrite", s => s.put({ nome: f.name, data: new Date().toLocaleString("pt-BR"), bytes }, "rj"));
+        atualizarStatusModelo();
+      } catch (e) { alert("Não consegui guardar o modelo: " + ((e && e.message) || e)); }
+    });
+  }
+  { const sel = $("#rjReu"); LEXRJ.BANCOS.forEach((b, i) => { const o = document.createElement("option"); o.value = i; o.textContent = b.nome; sel.appendChild(o); });
+    const o = document.createElement("option"); o.value = "outro"; o.textContent = "Outro réu (colar a qualificação)"; sel.appendChild(o);
+    sel.addEventListener("change", () => $("#rjReuOutro").classList.toggle("hidden", sel.value !== "outro")); }
+
+  async function lerXlsxAbas(file) {
+    const wb = XLSX.read(await lerBytes(file), { type: "array" });
+    return wb.SheetNames.map(n => ({ nome: n, linhas: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: "" }) }));
+  }
+
+  async function carregarRJ(arqs, files) {
+    state.arqs = arqs; state.rj = null;
+    document.querySelectorAll("input[name=sexo]").forEach(el => { el.checked = false; });
+    $("#nasc").value = ""; $("#rjSaida").innerHTML = "";
+    const lista = Array.from(files);
+    const hipo = lista.find(f => /hipo/i.test(f.name) && /\.pdf$/i.test(f.name));
+    const ok = v => v ? "✅ " + esc(v.name) : "—";
+    $("#arquivos").innerHTML = "<b>Tabela de descontos:</b> " + ok(arqs.xlsx) + " · <b>Extrato:</b> " + ok(arqs.extrato) + "<br>" +
+      "<b>Procuração:</b> " + ok(arqs.procuracao) + " · <b>JUS:</b> " + ok(arqs.jus) + " · <b>Comprovante de renda (HIPO):</b> " + ok(hipo) + "<br>" +
+      "<b>Documentos (RG/CNH):</b> " + ok(arqs.docs) + " · <b>KIT Validação:</b> " + ok(arqs.validacao);
+    $("#dados").innerHTML = "Lendo os documentos do cliente…";
+    const avisos = []; let pl = null, ext = {}, extTxt = "", outorg = null, cc = null;
+    try { pl = arqs.xlsx ? LEXRJ.planilhaRJ(await lerXlsxAbas(arqs.xlsx)) : null; } catch (e) { avisos.push("tabela de descontos (" + dicaArquivo(e) + ")"); }
+    try { extTxt = arqs.extrato ? await lerPdfTexto(arqs.extrato) : ""; ext = LEX.extrairExtrato(extTxt); } catch (e) { avisos.push("extrato (" + dicaArquivo(e) + ")"); }
+    for (const f of [arqs.procuracao, arqs.jus]) {
+      if (!f || outorg) continue;
+      try { outorg = LEXRJ.extrairOutorgante(await lerPdfTexto(f)); } catch (e) { avisos.push(f.name + " (" + dicaArquivo(e) + ")"); }
+    }
+    try { cc = hipo ? LEXRJ.lerContracheque(await lerPdfTexto(hipo)) : null; } catch (e) { avisos.push("comprovante de renda (" + dicaArquivo(e) + ")"); }
+    const nomes = lista.map(f => (f.webkitRelativePath || "") + " " + f.name).join(" ");
+    const banco = LEXRJ.detectarBanco(nomes + " " + extTxt.slice(0, 3000));
+    state.rj = { pl, cc, outorg };
+
+    // preenche o formulário (tudo editável)
+    $("#rjQualif").value = outorg ? outorg.qualificacao : "";
+    $("#rjCidade").value = outorg && outorg.cidade ? outorg.cidade : "";
+    $("#rjAgencia").value = ext.agencia || ""; $("#rjConta").value = ext.conta || "";
+    $("#rjReu").value = banco ? String(LEXRJ.BANCOS.indexOf(banco)) : "outro";
+    $("#rjReuOutro").classList.toggle("hidden", !!banco);
+    const cond = pl ? LEXRJ.classificar(pl.grupos.length ? pl.grupos.map(g => g.aba) : pl.rubricas) : {};
+    ["TARIFAS", "CREDITO", "SEGURO", "NAO_IDENTIFICADA"].forEach(k => { $("#rjCond" + k).checked = !!cond[k]; });
+    { const ta = $("#socioTexto"); if (ta && cc) ta.value = LEXRJ.textoSocio(cc); }
+
+    let h = "";
+    if (pl && pl.grupos.length) {
+      h += "<b>Tabela:</b> " + pl.grupos.map(g => esc(g.aba) + " (" + g.descontos.length + ")").join(" · ") +
+        "<br><b>Total:</b> R$ " + LEXRJ.fmt(pl.total) + " · <b>Dobro:</b> R$ " + LEXRJ.fmt(pl.dobro);
+      if (pl.divergencias.length) h += "<div class='warn-box' style='background:#fdecea;border-color:#e74c3c;color:#922'>⚠️ Soma diferente do VALOR TOTAL da aba — conferir na Organização de Documentos: " + pl.divergencias.map(esc).join(" · ") + "</div>";
+      if (/CAP|CARTAO|CART\b|TITULO/.test(pl.grupos.map(g => g.aba).join(" ").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase()))
+        h += "<div class='hint'>Título de capitalização e cartão não têm fundamento próprio no item 3.2 — ficam nos parágrafos gerais.</div>";
+    } else h += "<div class='warn-box' style='background:#fdecea;border-color:#e74c3c;color:#922'>⚠️ Não encontrei lançamentos na tabela de descontos. O modelo RJ é para a tabela LEXFINDER (uma aba por rubrica, com Data · Descrição · Valor).</div>";
+    h += "<br><b>Réu:</b> " + (banco ? esc(banco.nome) : "<span style='color:#922'>não identificado — escolha ou cole a qualificação</span>");
+    h += "<br><b>Agência/Conta (extrato):</b> " + esc((ext.agencia || "?") + " / " + (ext.conta || "?"));
+    if (cc) {
+      h += "<br><b>Comprovante de renda:</b> " + esc(cc.orgao || "?") + " · " + cc.meses.map(m => esc(m.comp)).join(", ") + " · bruto médio R$ " + LEXRJ.fmt(cc.bruto) + " · líquido médio R$ " + LEXRJ.fmt(cc.liq);
+      if (cc.bruto > 5000) h += "<div class='warn-box'>Renda bruta acima de R$ 5.000,00 (parâmetro da ADC 80): a gratuidade depende da demonstração concreta — o advogado deve avaliar.</div>";
+    } else h += "<br><b>Comprovante de renda:</b> <span class='hint'>formato não reconhecido (ou ausente) — escreva o texto socioeconômico abaixo com os dados dos documentos.</span>";
+    if (avisos.length) h += "<div class='warn-box' style='background:#fdecea;border:1px solid #f5b7b1;color:#7b1a13;margin-top:12px'>⚠️ Não consegui ler: " + esc(avisos.join(" · ")) + "</div>";
+    $("#dados").innerHTML = h;
+
+    if (cc && cc.nascimento) $("#nasc").value = cc.nascimento;   // já disponível enquanto o OCR roda
+    $("#rg").innerHTML = "renderizando o documento de identidade…";
+    if (arqs.docs) {
+      try { const imgs = await renderPdfImgs(arqs.docs, 3); $("#rg").innerHTML = imgs.map(s => '<img src="' + s + '">').join(""); }
+      catch (err) { $("#rg").innerHTML = "<span class='hint'>não consegui renderizar a identidade (" + dicaArquivo(err) + ")</span>"; }
+      await autoDetectar(arqs);   // sexo/nascimento por texto + OCR (Tesseract)
+      if (!$("#nasc").value && !(cc && cc.nascimento) && typeof Tesseract !== "undefined") await ocrReforcoRJ(arqs.docs);
+    } else $("#rg").innerHTML = "<span class='hint'>kit de documentos não encontrado</span>";
+    if (cc && cc.nascimento) {   // contracheque traz o nascimento em texto: mais confiável que o OCR
+      $("#nasc").value = cc.nascimento;
+      $("#detStatus").innerHTML += " <br>📄 Nascimento confirmado pelo comprovante de renda: <b>" + esc(cc.nascimento) + "</b>.";
+    }
+  }
+
+  // 2ª tentativa de OCR só no RJ (o OCR do AM/NG não muda): resolução maior acha datas que a escala 3 perde
+  // em RG fotografado (caso real: data lida em 4.5, não em 3).
+  async function ocrReforcoRJ(file) {
+    try {
+      const pdf = await pdfjsLib.getDocument({ data: await lerBytes(file) }).promise;
+      const worker = await getOcrWorker(); let full = "";
+      for (let i = 1; i <= Math.min(4, pdf.numPages); i++) {
+        det("🔎 2ª leitura do documento em alta resolução (" + i + "/" + Math.min(4, pdf.numPages) + ")…");
+        const page = await pdf.getPage(i), vp = page.getViewport({ scale: 4.5 });
+        const cv = document.createElement("canvas"); cv.width = vp.width; cv.height = vp.height;
+        await page.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
+        full += "\n" + (await worker.recognize(realcar(cv))).data.text;
+        const r = parseIdentidade(full);
+        if (r.dob) {
+          $("#nasc").value = r.dob;
+          if (r.sexo && !document.querySelector("input[name=sexo]:checked")) { const el = document.querySelector('input[name=sexo][value="' + r.sexo + '"]'); if (el) el.checked = true; }
+          det("✅ Nascimento lido na 2ª leitura: <b>" + r.dob + "</b>" + (r.sexo ? " · sexo <b>" + (r.sexo === "F" ? "Feminino" : "Masculino") + "</b>" : " · ⚠️ selecione o sexo") + ". Confira no documento.");
+          return;
+        }
+      }
+      det("⚠️ Não consegui ler a data de nascimento no documento — preencha olhando a imagem ao lado.");
+    } catch (e) { det("⚠️ Falha na 2ª leitura (" + ((e && e.message) || e) + ") — preencha manualmente."); }
+  }
+
+  $("#btnGerarRJ").addEventListener("click", async function () {
+    const m = await modeloGet();
+    if (!m) { alert("Carregue primeiro o modelo da peça RJ (.docx)."); return; }
+    const rj = state.rj;
+    if (!rj || !rj.pl || !rj.pl.grupos.length) { alert("Não há lançamentos da tabela de descontos para montar a peça."); return; }
+    const selSexo = document.querySelector("input[name=sexo]:checked");
+    if (!selSexo) { alert("Selecione o sexo do(a) cliente (Feminino ou Masculino) conferindo o documento."); return; }
+    const nasc = $("#nasc").value.trim();
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(nasc)) { alert("Informe a data de nascimento (dd/mm/aaaa)."); return; }
+    const qualif = $("#rjQualif").value.trim(), cidade = $("#rjCidade").value.trim();
+    const agencia = $("#rjAgencia").value.trim(), conta = $("#rjConta").value.trim();
+    const socio = ($("#socioTexto").value || "").trim(), dano = LEXRJ.num($("#rjDano").value);
+    const faltam = [[!qualif, "qualificação"], [!cidade, "comarca/cidade"], [!agencia || !conta, "agência e conta"],
+      [!socio, "texto socioeconômico"], [!(dano > 0), "valor do dano moral"]].filter(x => x[0]).map(x => x[1]);
+    let banco = null;
+    if ($("#rjReu").value === "outro") {
+      const t = $("#rjReuOutro").value.trim(), i = t.indexOf(",");
+      if (i > 0) banco = { nome: t.slice(0, i).trim(), infos: t.slice(i + 1).trim().replace(/[.,]$/, "") };
+      else faltam.push("qualificação do réu (NOME, pessoa jurídica…)");
+    } else banco = LEXRJ.BANCOS[+$("#rjReu").value];
+    if (faltam.length) { alert("Preencha: " + faltam.join(", ") + "."); return; }
+    const idade = LEX.idadeEm(nasc);
+    const cond = {}; ["TARIFAS", "CREDITO", "SEGURO", "NAO_IDENTIFICADA"].forEach(k => { cond[k] = $("#rjCond" + k).checked; });
+    try {
+      const zip = await JSZip.loadAsync(m.bytes);
+      const xml = await zip.file("word/document.xml").async("string");
+      const r = LEXRJ.preencher(xml, {
+        qualificacao: LEXRJ.generoTexto(qualif, selSexo.value), sexo: selSexo.value, banco, conta, agencia,
+        rubricas: rj.pl.rubricas, grupos: rj.pl.grupos, total: rj.pl.total, dobro: rj.pl.dobro, danoMoral: dano,
+        socio: LEXRJ.generoTexto(socio, selSexo.value), relato: $("#rjRelato").value, cidade, data: new Date(), nasc, idade, cond, extenso: LEX.extenso });
+      zip.file("word/document.xml", r.xml);
+      const blob = await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+      const nomeCli = (qualif.split(",")[0] || "CLIENTE").trim();
+      const nome = "PETIÇÃO INICIAL RJ - RUBRICAS - " + nomeCli + ".docx";
+      let h = '<a class="dl" href="' + URL.createObjectURL(blob) + '" download="' + esc(nome) + '">⬇️ Baixar peça RJ (.docx)</a>';
+      const av = [];
+      if (r.sobra.length) av.push("<b>Campos não preenchidos:</b> " + esc([...new Set(r.sobra)].join(" ")) + " — completar no Word antes do protocolo.");
+      if (idade >= 60) av.push("Cliente com " + idade + " anos: prioridade de pessoa idosa incluída (topo, item 1.5 e pedido)" + (idade >= 80 ? ", com a prioridade especial dos 80+." : "."));
+      if (!$("#rjRelato").value.trim()) av.push("Sem relato do dano moral: pela regra da Dra. Marcela, o advogado decide se mantém o pedido e o valor.");
+      if (rj.pl.divergencias.length) av.push("Tabela com soma divergente do VALOR TOTAL de alguma aba — conferir.");
+      av.push("Doença grave, pessoa com deficiência e TEA não são detectadas automaticamente — incluir à mão quando houver documento.");
+      h += av.map(a => "<div class='warn-box'>" + a + "</div>").join("");
+      $("#rjSaida").innerHTML = h;
+    } catch (e) { $("#rjSaida").innerHTML = "<div class='warn-box' style='background:#fdecea;border-color:#e74c3c;color:#922'>⚠️ Falha ao montar a peça: " + esc((e && e.message) || e) + "</div>"; }
+  });
+  aplicarOp();   // estado inicial da tela conforme a operação escolhida
 
   /* ---------- Máscara de data (evita "03/061992") ---------- */
   $("#nasc").addEventListener("input", function (e) {

@@ -39,3 +39,10 @@ th{color:var(--muted);font-weight:600}
 footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
 .hidden{display:none}
 .warn-box{background:#fff8e1;border:1px solid #ffe0a3;border-radius:8px;padding:12px;font-size:13px;margin-top:10px}
+.ops{display:flex;gap:12px;flex-wrap:wrap}
+.op{flex:1;min-width:200px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;color:#1b1f24;font-size:14px}
+.op .hint{display:block;margin-top:2px}
+.op:has(input:checked){border-color:var(--navy);background:#eef3fa}
+.campo{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13px}
+.chk{display:block;color:#1b1f24;font-size:14px;margin:4px 0}
+.btn-secondary{background:#5b6470}

@@ -14,6 +14,15 @@
 
 <main>
   <div class="card">
+    <h2><span class="step">0</span>Sua operação</h2>
+    <div class="ops" role="radiogroup" aria-label="Operação">
+      <label class="op"><input type="radio" name="op" value="AM" checked> <b>LA AM</b><span class="hint">corrige a peça gerada pelo LexPRE</span></label>
+      <label class="op"><input type="radio" name="op" value="RJ"> <b>LA RJ</b><span class="hint">monta a peça de rubricas reunidas a partir dos documentos e da tabela</span></label>
+      <label class="op"><input type="radio" name="op" value="NG"> <b>NG</b><span class="hint">corrige a peça gerada pelo LexPRE</span></label>
+    </div>
+  </div>
+
+  <div class="card">
     <h2><span class="step">1</span>Selecione os arquivos do cliente</h2>
     <div class="filepick">
       <button id="btnSelArquivos" class="gold" type="button" style="font-size:16px">📎 Selecionar os arquivos do cliente</button>
@@ -64,6 +73,41 @@
       <p class="hint" style="margin-top:8px">Preenchido automaticamente a partir do documento; confira e ajuste se necessário. A idade define os itens de idoso (60+). Nada é protocolado sem revisão humana.</p>
     </div>
 
+    <div id="cardRJ" class="card hidden">
+      <h2><span class="step">4</span>Peça RJ — rubricas reunidas</h2>
+      <p class="hint" style="margin-top:-4px">Montada a partir do modelo da Dra. Marcela e dos documentos do cliente. Confira cada campo; nada é protocolado sem revisão.</p>
+      <div class="kv" id="rjModeloStatus">Modelo: verificando…</div>
+      <button id="btnModeloRJ" type="button" class="btn-secondary" style="margin:6px 0 14px">📄 Carregar o modelo da peça RJ (.docx)</button>
+      <div class="grid">
+        <div>
+          <label for="rjQualif">Qualificação do cliente <span class="hint">(da procuração/declaração — gênero ajustado ao gerar)</span></label>
+          <textarea id="rjQualif" rows="4" class="campo"></textarea>
+          <label for="rjReu" style="margin-top:10px">Réu</label>
+          <select id="rjReu" class="campo"></select>
+          <textarea id="rjReuOutro" rows="3" class="campo hidden" placeholder="NOME DO RÉU, pessoa jurídica de direito privado registrado no CNPJ sob o nº …, situada em … (copie de uma peça do LexPRE)"></textarea>
+          <div class="row" style="margin-top:10px">
+            <div><label for="rjCidade">Comarca / cidade</label><input type="text" id="rjCidade"></div>
+            <div><label for="rjAgencia">Agência</label><input type="text" id="rjAgencia" style="width:110px"></div>
+            <div><label for="rjConta">Conta</label><input type="text" id="rjConta" style="width:130px"></div>
+          </div>
+        </div>
+        <div>
+          <label>Fundamentos do item 3.2 <span class="hint">(marcados pelas abas da tabela — confira)</span></label>
+          <label class="chk"><input type="checkbox" id="rjCondTARIFAS"> Tarifas</label>
+          <label class="chk"><input type="checkbox" id="rjCondCREDITO"> Operações de crédito e encargos</label>
+          <label class="chk"><input type="checkbox" id="rjCondSEGURO"> Seguros</label>
+          <label class="chk"><input type="checkbox" id="rjCondNAO_IDENTIFICADA"> Rubricas de natureza não identificada</label>
+          <div class="row" style="margin-top:10px">
+            <div><label for="rjDano">Dano moral (R$)</label><input type="text" id="rjDano" value="10.000,00" style="width:130px"></div>
+          </div>
+          <label for="rjRelato" style="margin-top:10px">Relato do dano moral <span class="hint">(ficha do comercial — fato concreto, com data e documento; pode ficar vazio)</span></label>
+          <textarea id="rjRelato" rows="3" class="campo"></textarea>
+        </div>
+      </div>
+      <button id="btnGerarRJ" class="gold" style="margin-top:14px">⚖️ Gerar peça RJ</button>
+      <div id="rjSaida" style="margin-top:10px"></div>
+    </div>
+
     <div id="resultado" class="hidden">
       <div class="card">
         <h2><span class="step">4</span>Resultado</h2>
@@ -79,7 +123,7 @@
   </div>
 </main>
 
-<footer>LexFixer · roda 100% no navegador · consulte o Manual do escritório para as regras completas. · <span id="versao">v2026.10.22-35</span></footer>
+<footer>LexFixer · roda 100% no navegador · consulte o Manual do escritório para as regras completas. · <span id="versao">v2026.10.22-36</span></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -90,6 +134,7 @@
     'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 </script>
 <script src="js/engine.js?v=2026.07.31-31"></script>
-<script src="js/app.js?v=2026.10.22-35"></script>
+<script src="js/rj.js?v=2026.10.22-36"></script>
+<script src="js/app.js?v=2026.10.22-36"></script>
 </body>
 </html>
