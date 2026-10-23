@@ -238,7 +238,9 @@
     // lançamentos do extrato com o mesmo histórico de alguma rubrica da tabela, mas fora dela
     const descs = new Set(); grupos.forEach(g => g.descontos.forEach(d => descs.add(nz(d.desc))));
     const vistos = new Set(lanc.filter(l => usados.has(l)).map(l => l.doc + "|" + l.deb + "|" + l.data));
-    const fora = lanc.filter(l => !usados.has(l) && !l.ultimos && l.deb != null && descs.has(nz(l.hist)) && !vistos.has(l.doc + "|" + l.deb + "|" + l.data))
+    // mesma assinatura (histórico + complemento sem números) de um lançamento já casado: pega "PAGTO ELETRON COBRANCA · BRADESCO VIDA…"
+    const sig = l => nz(l.hist + " " + String(l.compl || "").replace(/\d+/g, "")), sigs = new Set(lanc.filter(l => usados.has(l)).map(sig));
+    const fora = lanc.filter(l => !usados.has(l) && !l.ultimos && l.deb != null && (descs.has(nz(l.hist)) || sigs.has(sig(l))) && !vistos.has(l.doc + "|" + l.deb + "|" + l.data))
       .map(l => ({ data: l.data, hist: l.hist, compl: l.compl, doc: l.doc, val: l.deb, contrato: R.contratoDe(l.compl) }));
     const comProb = linhas.filter(x => x.prob.length);
     return { linhas, fora, ok: linhas.length - comProb.length, comProb: comProb.length, lancExtrato: lancTodos.length,

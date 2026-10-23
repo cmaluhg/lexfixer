@@ -93,12 +93,14 @@ assert.deepStrictEqual(R.linhasPeca(gr[0]).map(x => x.data + " " + x.val), ["05/
 assert.ok(!au.linhas.some((x, i) => gr[0].descontos[i].grave), "data/contrato/documento não são graves; só valor ou não localizado");
 // compra no cartão/débito nunca é desconto. Caso real (20/02/2017): a planilha pôs na "Vida e Previdência" a compra de R$ 41,30.
 const pag3 = cab.concat(lanc(452, "PAGTO ELETRON COBRANCA", "0000221", "4,87", "20/02/2017", "BRADESCO VIDA PREV-SEG.VIDA"),
-  lanc(422, "COMPRA CARTAO VISA", "0122054", "41,30", null, "COSMETICA PERFUMARIA"), lanc(386, "COMPRA CARTAO DEB", "0200057", "35,94", null, "UTILICASA"));
+  lanc(422, "COMPRA CARTAO VISA", "0122054", "41,30", null, "COSMETICA PERFUMARIA"), lanc(386, "COMPRA CARTAO DEB", "0200057", "35,94", null, "UTILICASA"),
+  lanc(350, "PAGTO ELETRON COBRANCA", "0000228", "4,87", "20/03/2017", "BRADESCO VIDA PREV-SEG.VIDA"));
 const gc = [{ aba: "Vida", descontos: [{ data: "20/02/2017", desc: "BRADESCO VIDA PREV-SEG", op: "0122054", val: 41.30 }] },
   { aba: "Seguro", descontos: [{ data: "20/02/2017", desc: "BRADESCO AUTO", op: "0200057", val: 35.94 }, { data: "20/02/2017", desc: "COMPRA DEBITO", op: "", val: 9 }] }];
 const ac = R.auditarTabela(gc, R.extratoBradesco([pag3]));
 assert.strictEqual(gc.length, 1, "aba só com compras sai inteira");
 assert.deepStrictEqual([gc[0].descontos[0].val, gc[0].total, gc[0].descontos[0].opPeca], [4.87, 4.87, "0000221"], "valor e documento da rubrica, não da compra");
 assert.ok(!gc[0].descontos[0].grave); assert.strictEqual(ac.compras, 3);
+assert.deepStrictEqual(ac.fora.map(f => f.doc), ["0000228"], "mesmo histórico + complemento da rubrica, fora da tabela: avisa");
 
 console.log("test_rj: OK");
