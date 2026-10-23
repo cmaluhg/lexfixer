@@ -62,4 +62,43 @@ r = R.preencher(modelo, Object.assign({}, base, { idade: 40, nasc: "01/01/1986",
 assert.doesNotMatch(t, /PRIORIDADE|1\.5\./); assert.match(t, /COMARCA DE NILÓPOLIS – RJ/); assert.match(t, /^Nilópolis, 22/m);
 assert.match(t, /^Em 10\/04\/2026, a conta de luz foi devolvida\.$/m);
 
+// extrato "Bradesco Celular" (itens com posição, como o pdf.js entrega): a data vem no 1º lançamento do dia e vale para os de baixo.
+// Caso real (pág. 1): 05/01 TRANSF · ENCARGOS · PARCELA 106,34 | 06/01 TRANSF · TITULO | pág. seguinte começa sem data.
+const cab = [{ s: "Data", x: 46, y: 681 }, { s: "Histórico", x: 111, y: 681 }, { s: "Docto.", x: 305, y: 681 }, { s: "Crédito (R$)", x: 385, y: 681 },
+  { s: "Débito (R$)", x: 452, y: 681 }, { s: "Saldo (R$)", x: 520, y: 681 }];
+const lanc = (y, hist, doc, deb, data, compl) => [{ s: hist, x: 110, y }, { s: doc, x: 303, y: y - 4 }, { s: deb, x: 469, y: y - 4 }, { s: "1,00", x: 523, y: y - 4 }]
+  .concat(data ? [{ s: data, x: 46, y: y - 4 }] : []).concat(compl ? [{ s: compl, x: 110, y: y - 9 }] : []);
+const pag1 = cab.concat(lanc(452, "TRANSF SALDO C/SAL P/CC", "0502143", "316,00", "05/01/2017"), lanc(422, "ENCARGOS LIMITE DE CRED", "8668074", "299,62"),
+  lanc(386, "PARCELA CREDITO PESSOAL", "3460005", "106,34", null, "LIQUID. CONTRATO 900000017"),
+  lanc(351, "TRANSF SALDO C/SAL P/CC", "0602143", "10,00", "06/01/2017"), lanc(316, "TITULO DE CAPITALIZACAO", "5370003", "39,12"));
+const pag2 = cab.concat(lanc(620, "PARCELA CREDITO PESSOAL", "3460009", "79,99", null, "CONTR 288818690 PARC 016/024"), lanc(585, "GASTOS CARTAO DE CREDITO", "3990010", "5,00", "10/01/2017"));
+const L = R.extratoBradesco([pag1, pag2]);
+assert.deepStrictEqual(L.map(l => l.data), ["05/01/2017", "05/01/2017", "05/01/2017", "06/01/2017", "06/01/2017", "06/01/2017", "10/01/2017"],
+  "data do 1º lançamento do dia vale para os de baixo; topo da página herda a da página anterior");
+assert.strictEqual(L[2].compl, "LIQUID. CONTRATO 900000017"); assert.strictEqual(L[2].deb, 106.34);
+assert.strictEqual(R.contratoDe(L[5].compl), "CONTR 288818690 PARC 016/024");
+// auditoria: data errada na planilha (pegou a data do dia seguinte), contrato faltando, documento ausente
+const gr = [{ aba: "Parcela", descontos: [
+  { data: "06/01/2017", desc: "PARCELA CREDITO PESSOAL", op: "3460005", val: 106.34 },
+  { data: "10/01/2017", desc: "PARCELA CREDITO PESSOAL", op: "3460009 COMPRA CARTAO VISA", val: 79.99 },
+  { data: "06/01/2017", desc: "TITULO DE CAPITALIZACAO", op: "", val: 39.12 }] }];
+const au = R.auditarTabela(gr, L);
+assert.deepStrictEqual(au.linhas[0].prob, ["data divergente: extrato 05/01/2017 × tabela 06/01/2017", "contrato do extrato ausente na tabela: CONTRATO 900000017"]);
+assert.match(au.linhas[1].prob[0], /^data divergente: extrato 06\/01\/2017 × tabela 10\/01\/2017/);
+assert.strictEqual(gr[0].descontos[1].opPeca, "3460009 · CONTR 288818690 PARC 016/024", "contrato do extrato completado na peça, sem o lixo da planilha");
+assert.match(au.linhas[2].prob.join(), /documento 5370003 do extrato ausente/);
+assert.strictEqual(R.limparOperacao("3460017 CONTR 301447099 PARC 010/012 COMPRA CARTAO VISA"), "3460017 · CONTR 301447099 PARC 010/012");
+// a peça sai com a data do extrato, em ordem de data; o valor não muda
+assert.deepStrictEqual(R.linhasPeca(gr[0]).map(x => x.data + " " + x.val), ["05/01/2017 106.34", "06/01/2017 79.99", "06/01/2017 39.12"]);
+assert.ok(!au.linhas.some((x, i) => gr[0].descontos[i].grave), "data/contrato/documento não são graves; só valor ou não localizado");
+// compra no cartão/débito nunca é desconto. Caso real (20/02/2017): a planilha pôs na "Vida e Previdência" a compra de R$ 41,30.
+const pag3 = cab.concat(lanc(452, "PAGTO ELETRON COBRANCA", "0000221", "4,87", "20/02/2017", "BRADESCO VIDA PREV-SEG.VIDA"),
+  lanc(422, "COMPRA CARTAO VISA", "0122054", "41,30", null, "COSMETICA PERFUMARIA"), lanc(386, "COMPRA CARTAO DEB", "0200057", "35,94", null, "UTILICASA"));
+const gc = [{ aba: "Vida", descontos: [{ data: "20/02/2017", desc: "BRADESCO VIDA PREV-SEG", op: "0122054", val: 41.30 }] },
+  { aba: "Seguro", descontos: [{ data: "20/02/2017", desc: "BRADESCO AUTO", op: "0200057", val: 35.94 }, { data: "20/02/2017", desc: "COMPRA DEBITO", op: "", val: 9 }] }];
+const ac = R.auditarTabela(gc, R.extratoBradesco([pag3]));
+assert.strictEqual(gc.length, 1, "aba só com compras sai inteira");
+assert.deepStrictEqual([gc[0].descontos[0].val, gc[0].total, gc[0].descontos[0].opPeca], [4.87, 4.87, "0000221"], "valor e documento da rubrica, não da compra");
+assert.ok(!gc[0].descontos[0].grave); assert.strictEqual(ac.compras, 3);
+
 console.log("test_rj: OK");
