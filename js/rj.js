@@ -102,6 +102,13 @@
       }
       if (g.descontos.length) { g.total = Math.round(g.descontos.reduce((s, d) => s + d.val, 0) * 100) / 100; grupos.push(g); }
     }
+    // aba consolidada ("Todos os Descontos") repete as linhas das abas por rubrica: não soma de novo
+    const chave = d => d.data + "|" + d.val.toFixed(2), consol = g => /TODOS|RESUMO|CONSOLID|GERAL/.test(up(g.aba));
+    grupos.slice().sort((a, b) => consol(b) - consol(a)).forEach(g => {
+      const outras = {}; grupos.filter(o => o !== g).forEach(o => o.descontos.forEach(d => { outras[chave(d)] = (outras[chave(d)] || 0) + 1; }));
+      const contida = g.descontos.every(d => outras[chave(d)]-- > 0);
+      if (contida && (consol(g) || g.descontos.length >= 3)) grupos.splice(grupos.indexOf(g), 1);
+    });
     const total = Math.round(grupos.reduce((s, g) => s + g.total, 0) * 100) / 100;
     const divergencias = grupos.filter(g => g.totalDecl != null && Math.abs(g.totalDecl - g.total) > 0.01)
       .map(g => g.aba + ": soma R$ " + R.fmt(g.total) + " × VALOR TOTAL da aba R$ " + R.fmt(g.totalDecl));
@@ -116,7 +123,8 @@
   // data herda a última data da página anterior. Prova: lançamentos com a data no próprio texto (saque 24h/ATM, transferência):
   // 397 confirmam esta regra e 0 a contrária nos 3 extratos de teste. As linhas desenhadas do PDF NÃO servem de prova
   // (há linha cheia sob toda linha com data, nas duas hipóteses).
-  const RE_DIN = /^\d{1,3}(?:\.\d{3})*,\d{2}$/, RE_DATA = /^\d{2}\/\d{2}\/\d{4}$/;
+  const RE_DIN = /^(?:-\s?)?\d{1,3}(?:\.\d{3})*,\d{2}$/, RE_DATA = /^\d{2}\/\d{2}\/(?:\d{4}|\d{2})$/;   // "Internet Banking": dd/mm/aa e débito "- 7,20"
+  const ano4 = s => s.length === 8 ? s.slice(0, 6) + "20" + s.slice(6) : s;
   R.extratoBradesco = function (pags) {
     const lanc = []; let col = null, dataAtual = null;
     pags.forEach((itens, ip) => {
@@ -134,7 +142,7 @@
         const its = linhas[y], doc = its.find(i => Math.abs(i.x - col.doc) < 15 && /^\d+$/.test(i.s));
         const din = its.filter(i => RE_DIN.test(i.s) && i.x < col.sal - 10);
         const deb = din.find(i => i.x >= col.deb - 5), cred = din.find(i => i.x < col.deb - 5);
-        return { y, doc: doc ? doc.s : null, deb: deb ? R.num(deb.s) : null, cred: cred ? R.num(cred.s) : null };
+        return { y, doc: doc ? doc.s : null, deb: deb ? R.num(deb.s.replace(/^-\s*/, "")) : null, cred: cred ? R.num(cred.s) : null };
       }).filter(v => v.doc || v.deb != null || v.cred != null);
       const usados = new Set(), daPagina = [];
       for (const v of vals) {
@@ -143,7 +151,7 @@
         const topoL = principal ? principal.y : v.y;
         const l = { pag: ip + 1, y: v.y, data: null, hist: principal ? principal.s : "", compl: "", doc: v.doc, deb: v.deb, cred: v.cred, ultimos };
         const dt = datas.find(d => d.y >= v.y - 1 && d.y <= topoL + 1);   // data impressa na própria linha?
-        if (dt) dataAtual = dt.s;
+        if (dt) dataAtual = ano4(dt.s);
         l.data = dataAtual;   // senão, a do lançamento de cima (ou da página anterior)
         daPagina.push(l); lanc.push(l);
       }
@@ -163,6 +171,42 @@
     return [doc, ct].filter(Boolean).join(" · ");
   };
   // Cruza cada linha da tabela com o extrato. Também completa o contrato que está no extrato e faltou na planilha.
+  R.tirarRemovidas = grupos => {
+    for (let i = grupos.length - 1; i >= 0; i--) {
+      const g = grupos[i]; g.descontos = g.descontos.filter(d => !d.remover);
+      if (!g.descontos.length) grupos.splice(i, 1);
+      else g.total = Math.round(g.descontos.reduce((s, d) => s + d.val, 0) * 100) / 100;
+    }
+  };
+  // Regras de cada operação sobre a tabela. RJ: decenal, rubricas reunidas (lançamento com mais de 10 anos sai da tabela).
+  // LA AM e NG: decenal; parc. cred., bx. ant. fin., título e seguro com mais de 5 anos → conferir (exceção do prazo);
+  // IRDR: mora/encargos e cesta nunca na mesma peça que gastos com crédito, parc. cred. pess. e bx. ant. fin.
+  R.regrasOperacao = function (op, grupos, hoje) {
+    const ref = hoje || new Date(), lim = anos => { const d = new Date(ref); d.setFullYear(d.getFullYear() - anos); return d; };
+    const dt = s => { const p = String(s).split("/"); return new Date(+p[2], +p[1] - 1, +p[0]); };
+    const L10 = lim(10), L5 = lim(5), fmtD = d => d.toLocaleDateString("pt-BR");
+    const avisos = [], prescritas = [], exc5 = [];
+    const irdr = s => /\bMORA\b|ENCARGO|CESTA|PACOTE/.test(s) ? "A" : /PARC(ELA)?\.?\s*CRED|BX\.?\s*ANT|ANTECIPACAO FINANC|GASTOS?\b.*(CRED|CARTAO)/.test(s) ? "B" : "";
+    const exc = s => /PARC(ELA)?\.?\s*CRED|BX\.?\s*ANT|ANTECIPACAO FINANC|TITULO|CAPITALIZ|SEGURO/.test(s);
+    const tipos = { A: new Set(), B: new Set() };
+    grupos.forEach(g => g.descontos.forEach(d => {
+      const t = dt(d.dataPeca || d.data), rub = up(g.aba + " " + d.desc);
+      if (t < L10) prescritas.push({ aba: g.aba, d });
+      else if (op !== "RJ" && t < L5 && exc(rub)) exc5.push({ aba: g.aba, d });
+      const k = irdr(up(d.desc)) || irdr(up(g.aba)); if (k) tipos[k].add(g.aba);
+    }));
+    if (prescritas.length) {
+      const soma = Math.round(prescritas.reduce((s, x) => s + x.d.val, 0) * 100) / 100;
+      if (op === "RJ") { prescritas.forEach(x => { x.d.remover = true; }); R.tirarRemovidas(grupos); }
+      avisos.push({ grave: op !== "RJ", txt: prescritas.length + " desconto(s) anteriores a " + fmtD(L10) + " (prescrição decenal), R$ " + R.fmt(soma) +
+        (op === "RJ" ? ": retirados da tabela e da peça." : ": devem sair da tabela.") });
+    }
+    if (exc5.length) avisos.push({ grave: false, txt: exc5.length + " desconto(s) de parc. cred./bx. ant. fin./título/seguro anteriores a " + fmtD(L5) +
+      " (mais de 5 anos): rubrica exceção ao prazo, fica no JEC — conferir a prescrição quinquenal." });
+    if (op !== "RJ" && tipos.A.size && tipos.B.size) avisos.push({ grave: true, txt: "IRDR: " + [...tipos.A].join(", ") + " (mora/encargos/cesta) não pode ir na mesma peça que " +
+      [...tipos.B].join(", ") + " (gastos com crédito, parc. cred. pess., bx. ant. fin.). Separar na Organização de Documentos." });
+    return { avisos, prescritas: prescritas.length, exc5: exc5.length };
+  };
   R.refazerTotais = pl => { pl.total = Math.round(pl.grupos.reduce((s, g) => s + g.total, 0) * 100) / 100; pl.dobro = Math.round(pl.total * 200) / 100; return pl; };
   // Compra no cartão/débito nunca é desconto: não entra na tabela nem serve de par na auditoria.
   R.ehCompra = s => /^\W*COMPRA\b/.test(up(s));
@@ -215,7 +259,11 @@
       if (!l) {
         const quase = mesmos.filter(x => pref(x) >= 2 || (pref(x) >= 1 && !docOp))[0];
         if (quase) { l = quase; prob.push("valor divergente: extrato R$ " + R.fmt(quase.deb) + " × tabela R$ " + R.fmt(d.val)); }
-        else prob.push("não encontrado no extrato (data + valor)");
+        else {   // último recurso: mesmo valor até 5 dias, um único candidato (ex.: "Liquid. Contrato" no lugar de "PARC CRED PESS")
+          const c5 = lanc.filter(x => !usados.has(x) && !x.ultimos && x.deb != null && Math.abs(x.deb - d.val) < 0.006 && x.data && Math.abs(dia(x.data) - dia(d.data)) <= 5);
+          if (c5.length === 1) { l = c5[0]; prob.push("data divergente: extrato " + l.data + " × tabela " + d.data + " (localizado só pelo valor, descrição diferente: conferir)"); }
+          else prob.push("não encontrado no extrato (data + valor)");
+        }
       }
       if (l) {
         usados.add(l);
@@ -229,12 +277,7 @@
       d.grave = prob.some(p => /^(valor|não encontrado)/.test(p));   // valor diferente ou não localizado: exige conferência humana
       linhas.push({ aba: g.aba, data: d.data, desc: d.desc, op: d.op, val: d.val, prob, extrato: l ? (l.hist + (l.compl ? " " + l.compl : "")) : "" });
     }
-    // linhas que eram compra saem da tabela; totais refeitos
-    for (let i = grupos.length - 1; i >= 0; i--) {
-      const g = grupos[i]; g.descontos = g.descontos.filter(d => !d.remover);
-      if (!g.descontos.length) grupos.splice(i, 1);
-      else g.total = Math.round(g.descontos.reduce((s, d) => s + d.val, 0) * 100) / 100;
-    }
+    R.tirarRemovidas(grupos);   // linhas que eram compra saem da tabela; totais refeitos
     // lançamentos do extrato com o mesmo histórico de alguma rubrica da tabela, mas fora dela
     const descs = new Set(); grupos.forEach(g => g.descontos.forEach(d => descs.add(nz(d.desc))));
     const vistos = new Set(lanc.filter(l => usados.has(l)).map(l => l.doc + "|" + l.deb + "|" + l.data));

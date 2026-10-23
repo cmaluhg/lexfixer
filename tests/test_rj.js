@@ -103,4 +103,17 @@ assert.deepStrictEqual([gc[0].descontos[0].val, gc[0].total, gc[0].descontos[0].
 assert.ok(!gc[0].descontos[0].grave); assert.strictEqual(ac.compras, 3);
 assert.deepStrictEqual(ac.fora.map(f => f.doc), ["0000228"], "mesmo histórico + complemento da rubrica, fora da tabela: avisa");
 
+// regras de cada operação: decenal (RJ retira; AM/NG avisa), exceção dos 5 anos e IRDR
+const hoje = new Date(2026, 9, 22), gr2 = () => [{ aba: "Mora de Crédito", descontos: [{ data: "01/10/2016", desc: "MORA CREDITO PESSOAL", val: 10 }, { data: "01/10/2017", desc: "MORA CREDITO PESSOAL", val: 20 }] },
+  { aba: "Parcela de Crédito Pessoal", descontos: [{ data: "01/10/2020", desc: "PARCELA CREDITO PESSOAL", val: 30 }] }];
+let g2 = gr2(), rg = R.regrasOperacao("RJ", g2, hoje);
+assert.deepStrictEqual([rg.prescritas, g2[0].descontos.length, g2[0].total, rg.avisos.length], [1, 1, 20, 1], "RJ: decenal tira a linha de 2016; sem IRDR (rubricas reunidas)");
+g2 = gr2(); rg = R.regrasOperacao("AM", g2, hoje);
+assert.strictEqual(g2[0].descontos.length, 2, "AM só avisa"); assert.strictEqual(rg.exc5, 1);
+assert.ok(rg.avisos.some(a => a.grave && /^IRDR/.test(a.txt)) && rg.avisos.some(a => a.grave && /decenal/.test(a.txt)));
+// aba consolidada ("Todos os Descontos") não soma duas vezes
+const pc = R.planilhaRJ([{ nome: "Todos os Descontos", linhas: [["05/08/2024", "PACOTE", 15.95], ["04/09/2024", "PACOTE", 15.95]] },
+  { nome: "Pacotes e Cestas", linhas: [["05/08/2024", "PACOTE DE SERVICOS", "0010724", 15.95], ["04/09/2024", "PACOTE DE SERVICOS", "0010824", 15.95]] }]);
+assert.deepStrictEqual([pc.grupos.map(g => g.aba), pc.total], [["Pacotes e Cestas"], 31.9]);
+
 console.log("test_rj: OK");

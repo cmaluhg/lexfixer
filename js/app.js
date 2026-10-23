@@ -309,6 +309,7 @@
         '<div class="warn-box" style="background:#fdecea;border:1px solid #f5b7b1;color:#7b1a13;margin-top:12px">' +
         "⚠️ Não consegui ler: " + esc(avisosLeitura.join(" · ")) + "</div>";
     }
+    await auditarAM(arqs);
     if (!p.endereco_tem_numero) $("#numero").value = "";
 
     $("#rg").innerHTML = "renderizando o documento de identidade…";
@@ -318,6 +319,28 @@
     } else $("#rg").innerHTML = "<span class='hint'>kit de documentos não encontrado</span>";
 
     if (arqs.docs) autoDetectar(arqs);   // preenche nascimento/sexo a partir do documento
+  }
+
+  // AM/NG: a mesma auditoria tabela × extrato do RJ + regras da operação. Não mexe na peça do LexPRE: só avisa.
+  async function auditarAM(arqs) {
+    state.audAM = null;
+    if (!arqs.xlsx || !arqs.extrato) return;
+    try {
+      const pl = LEXRJ.planilhaRJ(await lerXlsxAbas(arqs.xlsx));
+      if (!pl.grupos.length) return;
+      const lanc = LEXRJ.extratoBradesco(await lerPdfItens(arqs.extrato));
+      const aud = lanc.length ? LEXRJ.auditarTabela(pl.grupos, lanc) : null;
+      LEXRJ.refazerTotais(pl);
+      const op = opAtual(), reg = LEXRJ.regrasOperacao(op, pl.grupos);
+      const txtPeca = String((state.peticao && state.peticao.doc) || "").replace(/<[^>]+>/g, "");   // total conferido (ou o dobro) tem de aparecer na peça
+      if (txtPeca && txtPeca.indexOf(LEXRJ.fmt(pl.total)) < 0 && txtPeca.indexOf(LEXRJ.fmt(pl.dobro)) < 0)
+        reg.avisos.unshift({ grave: true, txt: "O total da tabela conferido no extrato (R$ " + LEXRJ.fmt(pl.total) + ", dobro R$ " + LEXRJ.fmt(pl.dobro) +
+          ") não aparece na peça: conferir se todos os descontos (todas as abas e blocos da tabela) estão nela." });
+      state.audAM = { pl, aud, reg };
+      $("#dados").innerHTML += (aud ? "" : "<div class='hint'>Auditoria tabela × extrato indisponível: extrato em formato diferente do Bradesco.</div>") + caixaAuditoria(aud, reg, op);
+      const a1 = document.getElementById("rjBaixarAud"); if (a1) a1.addEventListener("click", function (e) { e.preventDefault(); baixarAuditoriaCsv(aud); });
+      const a2 = document.getElementById("rjBaixarTab"); if (a2) a2.addEventListener("click", function (e) { e.preventDefault(); baixarTabelaCorrigida(pl, arqs.xlsx.name); });
+    } catch (e) { $("#dados").innerHTML += "<div class='hint'>Auditoria tabela × extrato indisponível (" + esc(dicaArquivo(e)) + ").</div>"; }
   }
 
   $("#btnGerar").addEventListener("click", async function () {
@@ -402,6 +425,18 @@
     if (audTbl && !audTbl.ok)
       avisos += "<div class='warn-box' style='background:#fdecea;border-color:#e74c3c;color:#922'>⚠️ <b>Tabela incorreta — voltar para Organização de documentos (ORG DOC).</b><br>" +
         audTbl.problemas.map(esc).join("<br>") + "</div>";
+    if (state.audAM) {   // auditoria tabela × extrato e regras da operação: só avisa (a peça já foi gerada)
+      const a = state.audAM.aud, lista = [];
+      if (a) {
+        const graves = state.audAM.pl.grupos.reduce((n, g) => n + g.descontos.filter(d => d.grave).length, 0);
+        if (graves) lista.push(graves + " linha(s) com valor diferente do extrato ou não localizada(s).");
+        if (a.compras) lista.push(a.compras + " linha(s) que eram compra no cartão/débito no lugar do desconto.");
+        if (a.fora.length) lista.push(a.fora.length + " desconto(s) da mesma rubrica no extrato fora da tabela.");
+      }
+      state.audAM.reg.avisos.filter(x => x.grave).forEach(x => lista.push(x.txt));
+      if (lista.length) avisos += "<div class='warn-box' style='background:#fdecea;border-color:#e74c3c;color:#922'>⚠️ <b>Auditoria tabela × extrato — voltar para Organização de documentos (ORG DOC).</b><br>" +
+        lista.map(esc).join("<br>") + "<br><span class='hint'>Detalhes, auditoria (.csv) e tabela corrigida no quadro de dados.</span></div>";
+    }
     // Painel de orientação de endereçamento (Luis Albert) — a equipe confere
     if (p.escritorio !== "NG")
       avisos += "<div class='warn-box' style='background:#eef4ff;border-color:#a9c3f0;color:#1a3a6b'>" +
@@ -505,6 +540,32 @@
     return wb.SheetNames.map(n => ({ nome: n, linhas: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: "" }) }));
   }
 
+  // Quadro da auditoria tabela × extrato + regras da operação. RJ: a peça sai corrigida; AM/NG: a peça vem do LexPRE, só avisa.
+  function caixaAuditoria(aud, reg, modo) {
+    const rj = modo === "RJ"; let h = "";
+    if (aud) {
+      const tipo = re => aud.linhas.filter(x => x.prob.some(p => re.test(p))).length;
+      const nd = tipo(/^data/), nc = tipo(/^contrato/), nn = tipo(/^não encontrado/), nv = tipo(/^valor/), nD = tipo(/^documento/);
+      h += "<div class='warn-box' style='background:#eef4ff;border-color:#a9c3f0;color:#1a3a6b'>🔎 <b>Auditoria tabela × extrato</b> (" + aud.lancExtrato + " lançamentos lidos): " +
+        aud.ok + " linha(s) OK · " + aud.comProb + " com apontamento" +
+        (nd ? " · <b>" + nd + "</b> data(s) corrigida(s) pelo extrato" : "") + (nv ? " · <b>" + nv + "</b> valor(es) diferente(s)" : "") +
+        (nn ? " · <b>" + nn + "</b> não localizada(s) no extrato" : "") + (nD ? " · " + nD + " sem o nº do documento (completado)" : "") +
+        (nc ? " · " + nc + " sem o contrato (completado)" : "") + (aud.compras ? " · <b>" + aud.compras + "</b> linha(s) que eram compra no cartão/débito (corrigida(s) para o desconto da rubrica ou retirada(s))" : "") +
+        (aud.fora.length ? " · <b>" + aud.fora.length + "</b> lançamento(s) da mesma rubrica no extrato fora da tabela" : "") +
+        ". <a href='#' id='rjBaixarAud'>Baixar a auditoria (.csv)</a> · <a href='#' id='rjBaixarTab'>Baixar a tabela corrigida (.xlsx)</a>" +
+        (nd || nc || nD || aud.compras ? (rj ? "<br>✅ A peça sai com a data, o documento e o contrato conferidos no extrato (o valor só muda quando a tabela tinha pegado uma compra no lugar do desconto). Anexe a <b>tabela corrigida</b> no lugar da original."
+          : "<br>A peça vem do LexPRE com a tabela original: anexe a <b>tabela corrigida</b>" + (aud.compras ? " e <b>devolva para a Organização de Documentos</b> (o valor mudou)" : "") + ".") : "") +
+        (nv || nn ? "<br><b style='color:#922'>⛔ Há linha(s) com valor diferente ou não localizada(s) no extrato: " + (rj ? "a peça só é gerada depois que a Organização de Documentos corrigir a tabela." : "devolver para a Organização de Documentos corrigir a tabela.") + "</b>" : "") +
+        (aud.fora.length ? "<br>⚠️ Lançamentos da mesma rubrica fora da tabela: confirmar se ficaram de fora de propósito (período/prescrição)." : "") + "</div>";
+    }
+    if (reg && reg.avisos.length) {
+      const grave = reg.avisos.some(a => a.grave);
+      h += "<div class='warn-box'" + (grave ? " style='background:#fdecea;border-color:#e74c3c;color:#922'" : "") + ">⚖️ <b>Regras da operação " + esc(modo) + "</b><br>" +
+        reg.avisos.map(a => (a.grave ? "⛔ " : "⚠️ ") + esc(a.txt)).join("<br>") + "</div>";
+    }
+    return h;
+  }
+
   async function carregarRJ(arqs, files) {
     state.arqs = arqs; state.rj = null;
     document.querySelectorAll("input[name=sexo]").forEach(el => { el.checked = false; });
@@ -532,8 +593,9 @@
     const nomes = lista.map(f => (f.webkitRelativePath || "") + " " + f.name).join(" ");
     const banco = LEXRJ.detectarBanco(nomes + " " + extTxt.slice(0, 3000));
     const aud = pl && pl.grupos.length && lanc.length ? LEXRJ.auditarTabela(pl.grupos, lanc) : null;   // também completa o contrato (d.opPeca)
-    if (aud) LEXRJ.refazerTotais(pl);   // linhas de compra saem ou são corrigidas na auditoria
-    state.rj = { pl, cc, outorg, aud };
+    const reg = pl && pl.grupos.length ? LEXRJ.regrasOperacao("RJ", pl.grupos) : null;   // decenal: o que tem mais de 10 anos sai
+    if (pl) LEXRJ.refazerTotais(pl);   // linhas de compra/prescritas saem ou são corrigidas
+    state.rj = { pl, cc, outorg, aud, reg };
 
     // preenche o formulário (tudo editável)
     $("#rjQualif").value = outorg ? outorg.qualificacao : "";
@@ -553,20 +615,8 @@
       if (/CAP|CARTAO|CART\b|TITULO/.test(pl.grupos.map(g => g.aba).join(" ").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase()))
         h += "<div class='hint'>Título de capitalização e cartão não têm fundamento próprio no item 3.2 — ficam nos parágrafos gerais.</div>";
     } else h += "<div class='warn-box' style='background:#fdecea;border-color:#e74c3c;color:#922'>⚠️ Não encontrei lançamentos na tabela de descontos. O modelo RJ é para a tabela LEXFINDER (uma aba por rubrica, com Data · Descrição · Valor).</div>";
-    if (aud) {
-      const tipo = re => aud.linhas.filter(x => x.prob.some(p => re.test(p))).length;
-      const nd = tipo(/^data/), nc = tipo(/^contrato/), nn = tipo(/^não encontrado/), nv = tipo(/^valor/), nD = tipo(/^documento/);
-      h += "<div class='warn-box' style='background:#eef4ff;border-color:#a9c3f0;color:#1a3a6b'>🔎 <b>Auditoria tabela × extrato</b> (" + aud.lancExtrato + " lançamentos lidos): " +
-        aud.ok + " linha(s) OK · " + aud.comProb + " com apontamento" +
-        (nd ? " · <b>" + nd + "</b> data(s) corrigida(s) pelo extrato" : "") + (nv ? " · <b>" + nv + "</b> valor(es) diferente(s)" : "") +
-        (nn ? " · <b>" + nn + "</b> não localizada(s) no extrato" : "") + (nD ? " · " + nD + " sem o nº do documento (completado)" : "") +
-        (nc ? " · " + nc + " sem o contrato (completado)" : "") + (aud.compras ? " · <b>" + aud.compras + "</b> linha(s) que eram compra no cartão/débito (corrigida(s) para o desconto da rubrica ou retirada(s))" : "") +
-        (aud.fora.length ? " · <b>" + aud.fora.length + "</b> lançamento(s) da mesma rubrica no extrato fora da tabela" : "") +
-        ". <a href='#' id='rjBaixarAud'>Baixar a auditoria (.csv)</a> · <a href='#' id='rjBaixarTab'>Baixar a tabela corrigida (.xlsx)</a>" +
-        (nd || nc || nD || aud.compras ? "<br>✅ A peça sai com a data, o documento e o contrato conferidos no extrato (o valor só muda quando a tabela tinha pegado uma compra no lugar do desconto). Anexe a <b>tabela corrigida</b> no lugar da original." : "") +
-        (nv || nn ? "<br><b style='color:#922'>⛔ Há linha(s) com valor diferente ou não localizada(s) no extrato: a peça só é gerada depois que a Organização de Documentos corrigir a tabela.</b>" : "") +
-        (aud.fora.length ? "<br>⚠️ Lançamentos da mesma rubrica fora da tabela: confirmar se ficaram de fora de propósito (período/prescrição)." : "") + "</div>";
-    } else if (pl && pl.grupos.length) h += "<div class='hint'>Auditoria tabela × extrato indisponível: extrato em formato diferente do Bradesco Celular.</div>";
+    if (aud) h += caixaAuditoria(aud, reg, "RJ");
+    else if (pl && pl.grupos.length) h += "<div class='hint'>Auditoria tabela × extrato indisponível: extrato em formato diferente do Bradesco Celular.</div>" + caixaAuditoria(null, reg, "RJ");
     h += "<br><b>Réu:</b> " + (banco ? esc(banco.nome) : "<span style='color:#922'>não identificado — escolha ou cole a qualificação</span>");
     h += "<br><b>Agência/Conta (extrato):</b> " + esc((ext.agencia || "?") + " / " + (ext.conta || "?"));
     if (cc) {
