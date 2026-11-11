@@ -334,7 +334,8 @@
       const k = d[3] + "-" + d[2]; porMes[k] = porMes[k] || { mes: d[2] + "/" + d[3], val: 0, tipos: {} };
       porMes[k].val = Math.round((porMes[k].val + val) * 100) / 100; porMes[k].tipos[m[1]] = 1;
     }
-    const meses = Object.keys(porMes).sort().map(k => porMes[k]).slice(-3);
+    const datas = (t.match(/\b\d{2}\/\d{2}\/\d{4}\b/g) || []).map(mesDe).sort(), ini = datas.length ? mesesAtras(datas.pop(), 11) : "";
+    const meses = Object.keys(porMes).filter(k => k >= ini).sort().map(k => porMes[k]).slice(-3);
     if (!meses.length) return null;
     const tp = Object.keys(Object.assign({}, ...meses.map(m => m.tipos))).join(" ");
     const tipo = /PENSAO/.test(tp) ? "pensão" : /APOSENT|PROVENTO/.test(tp) ? "proventos" : /INSS|BENEFICIO/.test(tp) ? "benefício previdenciário" : "salário";
@@ -354,13 +355,80 @@
   R.textoSocioDeclaracao = prof => "A parte autora" + (prof ? ", que se qualifica como " + prof.toLowerCase() + "," : "") +
     " declarou, na declaração de hipossuficiência anexa, não dispor de condições financeiras para arcar com as custas e despesas do processo" +
     " sem prejuízo do sustento próprio ou de sua família";   // sem ponto: o modelo continua com ", de modo que…"
-  // Ordem: socioeconômico do comercial > contracheque > créditos do extrato > declaração de hipossuficiência.
+  // Renda pelos créditos do extrato principal (lançamentos do R.extratoBradesco), mesma regra do HIPO.
+  R.rendaDosLancamentos = lanc => R.lerRendaExtrato((lanc || []).filter(l => l.cred > 0 && !l.ultimos && l.data)
+    .map(l => l.data + " " + l.hist + " " + (l.compl || "") + " " + R.fmt(l.cred)).join(" "));
+
+  // Gastos do dia a dia nos débitos do extrato, por tipo. Rubricas do banco (as impugnadas) e crédito ficam fora.
+  R.CAT_GASTOS = [
+    ["educação", /ESCOLA|COLEGIO|EDUCACIONAL|EDUCACAO|FACULDADE|UNIVERSIDADE|ENSINO|CRECHE|\bCURSO/],
+    ["saúde e farmácia", /FARMA|DROG|RAIA\b|VENANCIO|PACHECO|UNIMED|AMIL\b|SAUDE|HOSPITAL|CLINICA|LABORAT|ODONT/],
+    ["supermercado e alimentação", /SUPERMERC|SUPERM\b|MERCADO|ATACAD|ASSAI|PREZUNIC|GUANABARA|HORTIFRUTI|PADARIA|ACOUGUE/],
+    ["contas de água, luz e gás", /LIGHT|ENEL\b|AMPLA|CEDAE|AGUAS DO|NATURGY|\bCEG\b|ENERGIA/],
+    ["telefone e internet", /CLARO|VIVO\b|\bOI\b|\bTIM\b|\bSKY\b|\bNET\b|TELEFON/],
+  ];
+  const RE_NAO_GASTO = /MORA|ENCARGO|TARIFA|CESTA|SEGURO|CAPITALIZ|PARCELA CRED|EMPREST|FINANC|IOF|JUROS|MERCADO ?PAGO|POSTO|ESTORNO|TRANSF|SALDO/;
+  const mesDe = d => d.slice(6) + "-" + d.slice(3, 5);   // dd/mm/aaaa → aaaa-mm
+  const mesesAtras = (m, n) => { const [a, b] = m.split("-").map(Number), k = a * 12 + b - 1 - n; return Math.floor(k / 12) + "-" + String(k % 12 + 1).padStart(2, "0"); };
+  // Janela: 12 meses até o fim do extrato; média sobre os meses com débito. Movimento mais antigo não é a realidade de hoje.
+  R.gastosExtrato = function (lanc) {
+    const todos = (lanc || []).filter(l => !l.ultimos && /^\d{2}\/\d{2}\/\d{4}$/.test(l.data || ""));
+    if (!todos.length) return null;
+    const fim = todos.map(l => mesDe(l.data)).sort().pop(), ini = mesesAtras(fim, 11);
+    const ls = todos.filter(l => l.deb > 0 && mesDe(l.data) >= ini);
+    let meses = [...new Set(ls.map(l => mesDe(l.data)))].sort();
+    if (!meses.length) return null;
+    const ult = meses[meses.length - 1];
+    if (meses.length > 1 && Math.max(...ls.filter(l => mesDe(l.data) === ult).map(l => +l.data.slice(0, 2))) < 20) meses.pop();   // mês incompleto
+    const cats = {};
+    ls.filter(l => meses.indexOf(mesDe(l.data)) >= 0).forEach(l => {
+      const t = up(l.hist + " " + (l.compl || ""));
+      if (RE_NAO_GASTO.test(t)) return;
+      const c = R.CAT_GASTOS.find(c => c[1].test(t)); if (c) cats[c[0]] = (cats[c[0]] || 0) + l.deb;
+    });
+    const itens = R.CAT_GASTOS.map(c => c[0]).filter(k => cats[k]).map(k => ({ cat: k, media: Math.round(cats[k] / meses.length * 100) / 100 }));
+    if (!itens.length) return null;
+    const fm = m => m.slice(5) + "/" + m.slice(0, 4);
+    return { itens, de: fm(meses[0]), ate: fm(meses[meses.length - 1]), nMeses: meses.length,
+      total: Math.round(itens.reduce((s, i) => s + i.media, 0) * 100) / 100 };
+  };
+  // Extrato em texto com débito negativo ("dd/mm/aaaa HISTÓRICO -950,00", internet banking). Sem sinal não dá para separar débito de crédito: ignora.
+  R.lancDoTexto = function (texto) {
+    const t = String(texto || "").replace(/\s+/g, " ");
+    if (!/\d{2}\/\d{2}\/\d{4} [^\d]{3,60}-\s?\d{1,3}(?:\.\d{3})*,\d{2}/.test(t)) return [];
+    const out = [];
+    for (const p of t.split(/(?=\b\d{2}\/\d{2}\/\d{4}\b)/)) {
+      const m = p.match(/^(\d{2}\/\d{2}\/\d{4}) (.+?) (-\s?)?(\d{1,3}(?:\.\d{3})*,\d{2})(?:\s|$)/);
+      if (!m || /SALDO/i.test(m[2])) continue;
+      const v = R.num(m[4]); out.push({ data: m[1], hist: m[2].trim(), compl: "", deb: m[3] ? v : null, cred: m[3] ? null : v });
+    }
+    return out;
+  };
+  R.fraseGastos = function (g, liq) {
+    const lst = g.itens.map(i => "R$ " + R.fmt(i.media) + " com " + i.cat);
+    const per = g.nMeses === 1 ? "em " + g.de : "de " + g.de + " a " + g.ate;
+    return "Nos extratos bancários anexos, " + per + ", constam ainda gastos" + (g.nMeses > 1 ? ", em média por mês," : "") + " de " + R.listaRubricas(lst) +
+      (g.itens.length > 1 ? ", que somam R$ " + R.fmt(g.total) : "") +
+      (liq > 0 ? ", o equivalente a " + Math.round(g.total / liq * 100) + "% da renda líquida" : "");
+  };
+  // Texto + gastos: entra antes da frase final ("Com essa renda…"); no texto da declaração (sem ponto) vai no fim.
+  const comGastos = (texto, g, liq) => {
+    if (!g) return texto;
+    const f = R.fraseGastos(g, liq), i = texto.indexOf(" Com essa renda,");
+    return i >= 0 ? texto.slice(0, i) + " " + f + "." + texto.slice(i) : texto.replace(/[.;,]$/, "") + ". " + f;
+  };
+  // Ordem: socioeconômico do comercial > contracheque > créditos do extrato > declaração de hipossuficiência. Gastos do extrato somados quando houver.
   R.socioDoCliente = function (o) {
     const s = String(o.socioDocx || "").trim().replace(/\s+/g, " ");
     if (s) return { texto: s, fonte: "socioeconômico da pasta" };
-    if (o.cc) return { texto: R.textoSocio(o.cc), fonte: "comprovante de pagamento", bruto: o.cc.bruto };
-    if (o.renda) return { texto: R.textoSocioExtrato(o.renda), fonte: "créditos de " + o.renda.tipo + " no extrato", bruto: o.renda.media };
-    return { texto: R.textoSocioDeclaracao(R.profissaoDeclarada(o.qualificacao)), fonte: "declaração de hipossuficiência (sem comprovante de renda legível)", generico: true };
+    const vistos = new Set(), lanc = (o.lanc || []).concat(R.lancDoTexto(o.hipoTxt)).filter(l => {   // HIPO e extrato podem repetir o mesmo débito
+      const k = l.data + "|" + (l.deb || "") + "|" + (l.cred || ""); if (vistos.has(k)) return false; vistos.add(k); return true; });
+    const g = R.gastosExtrato(lanc), renda = o.renda || R.rendaDosLancamentos(lanc);
+    const fg = g ? " + gastos do extrato" : "";
+    if (o.cc) return { texto: comGastos(R.textoSocio(o.cc), g, o.cc.liq), fonte: "comprovante de pagamento" + fg, bruto: o.cc.bruto, gastos: g };
+    if (renda) return { texto: comGastos(R.textoSocioExtrato(renda), g, renda.media), fonte: "créditos de " + renda.tipo + " no extrato" + fg, bruto: renda.media, gastos: g };
+    return { texto: comGastos(R.textoSocioDeclaracao(R.profissaoDeclarada(o.qualificacao)), g, 0),
+      fonte: "declaração de hipossuficiência (sem comprovante de renda legível)" + fg, generico: true, gastos: g };
   };
 
   // Códigos do LexPRE → nome completo do desconto (como no extrato). Código fora da lista: sublinhado vira espaço e o app avisa.

@@ -589,9 +589,9 @@
       if (!f || outorg) continue;
       try { outorg = LEXRJ.extrairOutorgante(await lerPdfTexto(f)); } catch (e) { avisos.push(f.name + " (" + dicaArquivo(e) + ")"); }
     }
-    let renda = null, socioDocx = "";
+    let renda = null, socioDocx = "", hipoTxt = "";
     try {
-      const hipoTxt = hipo ? await lerPdfTexto(hipo) : "";
+      hipoTxt = hipo ? await lerPdfTexto(hipo) : "";
       cc = hipoTxt ? LEXRJ.lerContracheque(hipoTxt) : null;
       renda = !cc && hipoTxt ? LEXRJ.lerRendaExtrato(hipoTxt) : null;   // HIPO que é extrato bancário: créditos de salário/benefício
     } catch (e) { avisos.push("comprovante de renda (" + dicaArquivo(e) + ")"); }
@@ -601,7 +601,7 @@
     const aud = pl && pl.grupos.length && lanc.length ? LEXRJ.auditarTabela(pl.grupos, lanc) : null;   // também completa o contrato (d.opPeca)
     const reg = pl && pl.grupos.length ? LEXRJ.regrasOperacao("RJ", pl.grupos) : null;   // decenal: o que tem mais de 10 anos sai
     if (pl) LEXRJ.refazerTotais(pl);   // linhas de compra/prescritas saem ou são corrigidas
-    const socio = LEXRJ.socioDoCliente({ socioDocx, cc, renda, qualificacao: outorg && outorg.qualificacao });   // nunca vazio
+    const socio = LEXRJ.socioDoCliente({ socioDocx, cc, renda, lanc, hipoTxt: cc ? "" : hipoTxt, qualificacao: outorg && outorg.qualificacao });   // nunca vazio
     state.rj = { pl, cc, outorg, aud, reg, socio, peticao: arqs.peticao || null };
 
     // preenche o formulário (tudo editável)
@@ -634,6 +634,8 @@
       h += "<br><b>Renda no extrato (HIPO):</b> créditos de " + esc(renda.tipo) + " · " + renda.meses.map(m => esc(m.mes) + " R$ " + LEXRJ.fmt(m.val)).join(", ");
       if (renda.media > 5000) h += "<div class='warn-box'>Créditos acima de R$ 5.000,00 (parâmetro da ADC 80): a gratuidade depende da demonstração concreta — o advogado deve avaliar.</div>";
     } else h += "<br><b>Comprovante de renda:</b> <span class='hint'>formato não reconhecido (ou ausente).</span>";
+    if (socio.gastos) h += "<br><b>Gastos no extrato</b> (" + esc(socio.gastos.de + (socio.gastos.nMeses > 1 ? " a " + socio.gastos.ate + ", média/mês" : "")) + "): " +
+      socio.gastos.itens.map(i => esc(i.cat) + " R$ " + LEXRJ.fmt(i.media)).join(" · ") + " <span class='hint'>— confira no extrato antes do protocolo</span>";
     h += "<br><b>Texto socioeconômico:</b> " + esc(socio.fonte) + (socio.generico ? " <span style='color:#922'>— texto com base só na declaração; complete com a realidade do cliente se tiver o dado</span>" : "");
     if (arqs.peticao) h += "<br><b>Peça automática do LexPRE:</b> ✅ " + esc(arqs.peticao.name) + " <span class='hint'>— use o botão “Corrigir peça automática”</span>";
     if (avisos.length) h += "<div class='warn-box' style='background:#fdecea;border:1px solid #f5b7b1;color:#7b1a13;margin-top:12px'>⚠️ Não consegui ler: " + esc(avisos.join(" · ")) + "</div>";

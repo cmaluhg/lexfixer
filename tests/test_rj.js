@@ -150,4 +150,22 @@ assert.ok(sd.generico && /^A parte autora, que se qualifica como desempregado, d
 assert.ok(R.socioDoCliente({}).texto.length > 50, "sem nenhum dado o texto não fica vazio");
 assert.strictEqual(R.socioDoCliente({ socioDocx: " Texto do comercial ", cc }).texto, "Texto do comercial");
 
+// gastos do extrato por tipo (média dos 3 últimos meses completos); rubrica do banco não conta como gasto
+const Lc = (data, hist, compl, deb, cred) => ({ data, hist, compl, deb, cred: cred || null });
+const lancG = [Lc("05/06/2026", "PAGTO ELETRON COBRANCA", "ESCOLA X", 300), Lc("05/07/2026", "PAGTO ELETRON COBRANCA", "ESCOLA X", 300),
+  Lc("05/08/2026", "PAGTO ELETRON COBRANCA", "CENTRO EDUCACIONAL Y", 300), Lc("10/07/2026", "VISA ELECTRON", "DROGARIA PACHECO", 90),
+  Lc("12/08/2026", "B.D.N.-LIGHT/RJ", "", 150), Lc("20/08/2026", "MORA CONTA DE TELEFONE", "", 50), Lc("25/08/2026", "ASSAI ATACADISTA", "", 600),
+  Lc("02/09/2026", "ASSAI ATACADISTA", "", 999), Lc("03/08/2026", "CREDITO DE SALARIO", "GOVERNO", null, 3000)];
+const gg = R.gastosExtrato(lancG);
+assert.deepStrictEqual([gg.de, gg.ate, gg.itens.map(i => [i.cat, i.media]), gg.total],
+  ["06/2026", "08/2026", [["educação", 300], ["saúde e farmácia", 30], ["supermercado e alimentação", 200], ["contas de água, luz e gás", 50]], 580]);
+const sg = R.socioDoCliente({ lanc: lancG });
+assert.strictEqual(sg.texto, "Os extratos bancários anexos registram créditos de salário de R$ 3.000,00 em 08/2026. Nos extratos bancários anexos, de 06/2026 a 08/2026, " +
+  "constam ainda gastos, em média por mês, de R$ 300,00 com educação, R$ 30,00 com saúde e farmácia, R$ 200,00 com supermercado e alimentação e " +
+  "R$ 50,00 com contas de água, luz e gás, que somam R$ 580,00, o equivalente a 19% da renda líquida. Com essa renda, a parte autora não tem condições" +
+  " de arcar com as custas processuais e os honorários advocatícios sem prejuízo do próprio sustento.");
+assert.match(R.socioDoCliente({ lanc: lancG.slice(0, 3), qualificacao: "A, B, C, DO LAR, RG" }).texto,
+  /família\. Nos extratos bancários anexos, de 06\/2026 a 07\/2026, constam ainda gastos, em média por mês, de R\$ 300,00 com educação$/);
+assert.strictEqual(R.gastosExtrato([Lc("01/01/2026", "TARIFA BANCARIA", "", 10)]), null);
+
 console.log("test_rj: OK");
