@@ -30,7 +30,7 @@ const mes = (m, b, d, l) => "Secretaria de Estado da Casa Civil e Governança Ó
 const cc = R.lerContracheque(mes("5/2026", "1.000,00", "100,00", "900,00") + mes("6/2026", "2.000,00", "200,00", "1.800,00") + mes("7/2026", "3.000,00", "300,00", "2.700,00") + mes("8/2026", "4.000,00", "400,00", "3.600,00"));
 assert.strictEqual(cc.nascimento, "15/01/1960"); assert.strictEqual(cc.pensao, true); assert.strictEqual(cc.orgao, "ÓRGÃO TESTE - OT");
 assert.strictEqual(cc.bruto, 3000); assert.strictEqual(cc.meses[0].comp, "6/2026");
-assert.match(R.textoSocio(cc), /^A parte autora recebe pensão paga pela fonte pagadora ÓRGÃO TESTE - OT\. Nos comprovantes de pagamento de 6\/2026 a 8\/2026/);
+assert.ok(R.montarSocio({ cc }).startsWith("O(A) autor(a) é pensionista, com pensão paga pela fonte pagadora ÓRGÃO TESTE - OT. Segundo os comprovantes de pagamento de 6/2026 a 8/2026, anexos, recebe em média R$ 3.000,00 brutos"));
 assert.strictEqual(R.lerContracheque("extrato bancário qualquer"), null);
 
 // montagem: modelo mínimo com as mesmas marcas do modelo RJ
@@ -143,7 +143,7 @@ assert.deepStrictEqual(LEX.paraTextos(ra.xml).slice(2, 4), ["Texto do cliente.",
 const re = R.lerRendaExtrato("Data Histórico 03/09/2025 CREDITO DE SALARIO SECRETARIA DE ESTADO 0306876 6.045,49 6.045,49 TED ENV P/ C 9484765 6.045,49 0,00 " +
   "03/10/2025 CREDITO DE SALARIO SECRETARIA 0306876 2.000,00 2.000,00 05/10/2025 PIX TRANSF 50,00 03/11/2025 CREDITO DE SALARIO X 0506876 1.000,00 1.000,00");
 assert.deepStrictEqual([re.tipo, re.meses.map(m => m.val), re.media], ["salário", [6045.49, 2000, 1000], 3015.16]);
-assert.match(R.textoSocioExtrato(re), /^Os extratos bancários anexos registram créditos de salário de R\$ 3\.015,16, em média, nos meses de 09\/2025 a 11\/2025\./);
+assert.strictEqual(R.montarSocio({ renda: re }), "A renda do(a) autor(a) vem de créditos de salário que, segundo os extratos bancários anexos, somam em média R$ 3.015,16 por mês (09/2025 a 11/2025)");
 assert.strictEqual(R.lerRendaExtrato("29/06/2026 PIX TRANSF VANESSA 30,00 29/06/2026 DEP DIN ATM 690,00"), null);
 const sd = R.socioDoCliente({ qualificacao: "FULANO, BRASILEIRO(A), CASADO(A), DESEMPREGADO, RG nº 1" });
 assert.ok(sd.generico && /^A parte autora, que se qualifica como desempregado, declarou, na declaração de hipossuficiência anexa/.test(sd.texto));
@@ -160,12 +160,22 @@ const gg = R.gastosExtrato(lancG);
 assert.deepStrictEqual([gg.de, gg.ate, gg.itens.map(i => [i.cat, i.media]), gg.total],
   ["06/2026", "08/2026", [["educação", 300], ["saúde e farmácia", 30], ["supermercado e alimentação", 200], ["contas de água, luz e gás", 50]], 580]);
 const sg = R.socioDoCliente({ lanc: lancG });
-assert.strictEqual(sg.texto, "Os extratos bancários anexos registram créditos de salário de R$ 3.000,00 em 08/2026. Nos extratos bancários anexos, de 06/2026 a 08/2026, " +
-  "constam ainda gastos, em média por mês, de R$ 300,00 com educação, R$ 30,00 com saúde e farmácia, R$ 200,00 com supermercado e alimentação e " +
-  "R$ 50,00 com contas de água, luz e gás, que somam R$ 580,00, o equivalente a 19% da renda líquida. Com essa renda, a parte autora não tem condições" +
-  " de arcar com as custas processuais e os honorários advocatícios sem prejuízo do próprio sustento.");
-assert.match(R.socioDoCliente({ lanc: lancG.slice(0, 3), qualificacao: "A, B, C, DO LAR, RG" }).texto,
-  /família\. Nos extratos bancários anexos, de 06\/2026 a 07\/2026, constam ainda gastos, em média por mês, de R\$ 300,00 com educação$/);
+assert.strictEqual(sg.texto, "A renda do(a) autor(a) vem de créditos de salário que, segundo os extratos bancários anexos, somam R$ 3.000,00 por mês (08/2026). " +
+  "Os extratos bancários anexos registram, em média por mês, R$ 300,00 com educação, R$ 30,00 com saúde e farmácia, R$ 200,00 com supermercado e alimentação e " +
+  "R$ 50,00 com contas de água, luz e gás (06/2026 a 08/2026)");
+assert.ok(R.socioDoCliente({ lanc: lancG.slice(0, 3), qualificacao: "A, B, C, DO LAR, RG" }).texto
+  .endsWith("família. Os extratos bancários anexos registram, em média por mês, R$ 300,00 com educação (06/2026 a 07/2026)"));
 assert.strictEqual(R.gastosExtrato([Lc("01/01/2026", "TARIFA BANCARIA", "", 10)]), null);
+
+// ficha socioeconômica do comercial → texto corrido (gênero pela ficha), com renda e gastos na mesma frase
+const FI = "O autor mora em casa alugada, é único(a) provedor(a) de uma renda até 2500 reais para 1 pessoa e tem como principais gastos Aluguel, Água, Luz, Alimentação, Medicamentos, Transporte, Internet.";
+assert.deepStrictEqual(R.lerFicha(FI), { moradia: "em imóvel alugado", provedor: true, pessoas: 1, renda: { tipo: "ate", v1: 2500, v2: null },
+  gastos: ["aluguel", "água", "luz", "alimentação", "medicamentos", "transporte", "internet"], sexo: "M" });
+assert.strictEqual(R.socioDoCliente({ ficha: FI }).texto, "O autor reside em imóvel alugado e vive sozinho, sendo o único responsável pelo próprio sustento. " +
+  "Sua renda mensal, de até R$ 2.500,00, é destinada às despesas do dia a dia, como aluguel, água, luz, alimentação, medicamentos, transporte e internet");
+const tF = R.socioDoCliente({ socioDocx: FI.replace("O autor", "A autora").replace("1 pessoa", "3 pessoas"), cc }).texto;
+assert.ok(tF.startsWith("A autora reside em imóvel alugado e é a única provedora de um lar com 3 pessoas. É pensionista") &&
+  tF.endsWith("Essa renda é destinada às despesas do dia a dia, como aluguel, água, luz, alimentação, medicamentos, transporte e internet"), tF);
+assert.strictEqual(R.lerFicha("Texto livre sobre a vida do cliente."), null);
 
 console.log("test_rj: OK");

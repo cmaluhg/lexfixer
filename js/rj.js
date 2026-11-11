@@ -310,18 +310,6 @@
     return { orgao: org ? org.trim() : null, nascimento: nasc || null, pensao: /PENS/.test(up(vinc)), aposentado: apos,
       meses: ult, bruto: media("bruto"), desc: media("desc"), liq: media("liq") };
   };
-  // Texto da gratuidade só com dados do comprovante (regras do PROMPTS_GRATUIDADE da Dra. Marcela: sem adjetivos, sem presumir).
-  R.textoSocio = function (cc) {
-    if (!cc) return "";
-    const tipo = cc.pensao ? "pensão paga" : cc.aposentado ? "proventos de inatividade pagos" : "remuneração paga";
-    const per = cc.meses.length === 1 ? "No comprovante de pagamento de " + cc.meses[0].comp + ", anexo, a renda bruta é de R$ " + R.fmt(cc.bruto) +
-        ", os descontos somam R$ " + R.fmt(cc.desc) + " e o valor líquido creditado é de R$ " + R.fmt(cc.liq) + "."
-      : "Nos comprovantes de pagamento de " + cc.meses[0].comp + " a " + cc.meses[cc.meses.length - 1].comp + ", anexos, a renda bruta média é de R$ " +
-        R.fmt(cc.bruto) + ", os descontos somam, em média, R$ " + R.fmt(cc.desc) + " e o valor líquido médio creditado é de R$ " + R.fmt(cc.liq) + ".";
-    return "A parte autora recebe " + tipo + " pela fonte pagadora " + (cc.orgao || "indicada no comprovante") + ". " + per +
-      " Com essa renda, a parte autora não tem condições de arcar com as custas processuais e os honorários advocatícios sem prejuízo do próprio sustento.";
-  };
-
   // HIPO em forma de extrato bancário: créditos de salário, benefício, pensão ou aposentadoria (só o que o extrato mostra).
   const RE_RENDA = /(CRED(?:ITO)?\.? (?:DE )?SALARIO|PAG(?:TO|AMENTO)?\.? (?:DE )?SALARIO|SALARIO|INSS|BENEFICIO|PROVENTOS?|PENSAO|APOSENTADORIA)/;
   R.lerRendaExtrato = function (texto) {
@@ -340,12 +328,6 @@
     const tp = Object.keys(Object.assign({}, ...meses.map(m => m.tipos))).join(" ");
     const tipo = /PENSAO/.test(tp) ? "pensão" : /APOSENT|PROVENTO/.test(tp) ? "proventos" : /INSS|BENEFICIO/.test(tp) ? "benefício previdenciário" : "salário";
     return { meses, tipo, media: Math.round(meses.reduce((s, m) => s + m.val, 0) / meses.length * 100) / 100 };
-  };
-  R.textoSocioExtrato = function (re) {
-    const per = re.meses.length === 1 ? "de R$ " + R.fmt(re.media) + " em " + re.meses[0].mes
-      : "de R$ " + R.fmt(re.media) + ", em média, nos meses de " + re.meses[0].mes + " a " + re.meses[re.meses.length - 1].mes;
-    return "Os extratos bancários anexos registram créditos de " + re.tipo + " " + per + ". Com essa renda, a parte autora não tem condições de arcar" +
-      " com as custas processuais e os honorários advocatícios sem prejuízo do próprio sustento.";
   };
   // Sem comprovante legível: usa a declaração de hipossuficiência (JUS) e a profissão declarada nela. Nunca fica vazio.
   R.profissaoDeclarada = function (qualif) {
@@ -404,31 +386,87 @@
     }
     return out;
   };
-  R.fraseGastos = function (g, liq) {
-    const lst = g.itens.map(i => "R$ " + R.fmt(i.media) + " com " + i.cat);
-    const per = g.nMeses === 1 ? "em " + g.de : "de " + g.de + " a " + g.ate;
-    return "Nos extratos bancários anexos, " + per + ", constam ainda gastos" + (g.nMeses > 1 ? ", em média por mês," : "") + " de " + R.listaRubricas(lst) +
-      (g.itens.length > 1 ? ", que somam R$ " + R.fmt(g.total) : "") +
-      (liq > 0 ? ", o equivalente a " + Math.round(g.total / liq * 100) + "% da renda líquida" : "");
+  // Ficha socioeconômica do comercial, ex.: "O autor mora em casa alugada, é único(a) provedor(a) de uma renda até 2500 reais
+  // para 1 pessoa e tem como principais gastos Aluguel, Água, Luz…". Texto livre (sem esses sinais) não é ficha: volta null.
+  const valorFicha = s => R.num(/,\d{2}$/.test(s) ? s : s.replace(/\./g, ""));
+  R.lerFicha = function (txt) {
+    const t = String(txt || "").replace(/\s+/g, " ").trim(), u = up(t);
+    const mor = u.match(/(?:CASA|IMOVEL|APARTAMENTO|RESIDENCIA)\s+(ALUGAD|PROPRI|CEDID|EMPRESTAD|FINANCIAD)|(ALUGUEL)/);
+    const gas = t.match(/principais (?:gastos|despesas)\s*(?:s[ãa]o|com|:)?\s*(.+?)\s*\.?\s*$/i);
+    const pes = u.match(/(\d+)\s*PESSOAS?/);
+    const ren = u.match(/RENDA\D{0,25}?(ATE|ENTRE|DE)?\s*(?:R\$\s*)?(\d[\d.]*(?:,\d{2})?)(?:\s*REAIS)?(?:\s*(?:A|E)\s*(?:R\$\s*)?(\d[\d.]*(?:,\d{2})?))?/);
+    const prov = /PROVEDOR/.test(u);
+    if ([mor, gas, ren, prov].filter(Boolean).length < 2) return null;
+    const k = mor ? (mor[1] || "ALUGAD") : null;
+    return {
+      moradia: k ? "em imóvel " + { ALUGAD: "alugado", PROPRI: "próprio", CEDID: "cedido", EMPRESTAD: "cedido", FINANCIAD: "financiado" }[k] : null,
+      provedor: prov, pessoas: pes ? +pes[1] : null,
+      renda: ren ? { tipo: ren[1] === "ATE" ? "ate" : ren[3] ? "entre" : "de", v1: valorFicha(ren[2]), v2: ren[3] ? valorFicha(ren[3]) : null } : null,
+      gastos: gas ? gas[1].split(/\s*,\s*|\s+e\s+/i).map(s => s.trim().toLowerCase()).filter(Boolean) : [],
+      sexo: /\bA AUTORA\b/.test(u) ? "F" : /\bO AUTOR\b/.test(u) ? "M" : null,
+    };
   };
-  // Texto + gastos: entra antes da frase final ("Com essa renda…"); no texto da declaração (sem ponto) vai no fim.
-  const comGastos = (texto, g, liq) => {
-    if (!g) return texto;
-    const f = R.fraseGastos(g, liq), i = texto.indexOf(" Com essa renda,");
-    return i >= 0 ? texto.slice(0, i) + " " + f + "." + texto.slice(i) : texto.replace(/[.;,]$/, "") + ". " + f;
+
+  /* Texto socioeconômico em linguagem corrida: moradia e família (ficha), renda (comprovante, extrato ou ficha) e gastos
+     (ficha e extrato). Só usa o que está na ficha ou nos documentos; sem adjetivos. Sem ponto final: o modelo segue com
+     ", de modo que a imposição das despesas processuais comprometeria…". Gênero em "(a)"; o app ajusta pelo sexo. */
+  R.montarSocio = function (o) {
+    const f = o.ficha, cc = o.cc, re = o.renda, g = o.gastos, fr = [];
+    const suj = "O(A) autor(a)", per = (a, b) => a === b ? a : a + " a " + b;
+    if (f && (f.moradia || f.provedor || f.pessoas)) {
+      let s = suj + (f.moradia ? " reside " + f.moradia : "");
+      const sep = f.moradia ? " e " : " ";
+      if (f.pessoas === 1) s += sep + "vive sozinho(a)" + (f.provedor ? ", sendo o(a) único(a) responsável pelo próprio sustento" : "");
+      else if (f.provedor) s += sep + "é o(a) único(a) provedor(a) " + (f.pessoas ? "de um lar com " + f.pessoas + " pessoas" : "do seu lar");
+      else if (f.pessoas) s += sep + "divide a casa com mais " + (f.pessoas - 1) + (f.pessoas === 2 ? " pessoa" : " pessoas");
+      fr.push(s);
+    }
+    const ini = fr.length ? "" : suj + " ";
+    if (cc) {
+      const m = cc.meses, org = cc.orgao || "indicada no comprovante";
+      fr.push((ini ? ini + "é " : "É ") + (cc.pensao ? "pensionista, com pensão paga" : cc.aposentado ? "aposentado(a), com proventos pagos" : "servidor(a), com remuneração paga") +
+        " pela fonte pagadora " + org);
+      fr.push("Segundo " + (m.length === 1 ? "o comprovante de pagamento de " + m[0].comp + ", anexo, recebe" : "os comprovantes de pagamento de " + m[0].comp + " a " +
+        m[m.length - 1].comp + ", anexos, recebe em média") + " R$ " + R.fmt(cc.bruto) + " brutos, dos quais R$ " + R.fmt(cc.desc) +
+        " são descontados em folha, restando R$ " + R.fmt(cc.liq) + " líquidos por mês");
+    } else if (re) {
+      fr.push((ini ? "A renda do(a) autor(a)" : "Sua renda") + " vem de créditos de " + re.tipo + " que, segundo os extratos bancários anexos, somam " +
+        (re.meses.length > 1 ? "em média " : "") + "R$ " + R.fmt(re.media) + " por mês (" + per(re.meses[0].mes, re.meses[re.meses.length - 1].mes) + ")" +
+        (f && f.renda && f.renda.tipo === "ate" && re.media <= f.renda.v1 ? ", valor compatível com a renda informada, de até R$ " + R.fmt(f.renda.v1) : ""));
+    }
+    const desp = f && f.gastos.length ? "às despesas do dia a dia, como " + R.listaRubricas(f.gastos) : "";
+    if (!cc && !re && f && f.renda) {   // só a ficha: renda e gastos na mesma frase
+      const r = f.renda, v = r.tipo === "ate" ? "de até R$ " + R.fmt(r.v1) : r.tipo === "entre" ? "de R$ " + R.fmt(r.v1) + " a R$ " + R.fmt(r.v2) : "de R$ " + R.fmt(r.v1);
+      fr.push((ini ? "A renda mensal do(a) autor(a)" : "Sua renda mensal") + (desp ? ", " + v + ", é destinada " + desp : " é " + v));
+    } else if (desp) fr.push(cc || re ? "Essa renda é destinada " + desp : "Seus principais gastos são com " + R.listaRubricas(f.gastos));
+    if (g) {   // percentual da renda fica fora: gasto pequeno no extrato enfraqueceria o pedido
+      const lst = g.itens.map(i => "R$ " + R.fmt(i.media) + " com " + i.cat);
+      fr.push("Os extratos bancários anexos registram, " + (g.nMeses > 1 ? "em média por mês, " : "") + R.listaRubricas(lst) + " (" + per(g.de, g.ate) + ")");
+    }
+    return fr.join(". ").replace(/^./, c => c.toUpperCase());
   };
-  // Ordem: socioeconômico do comercial > contracheque > créditos do extrato > declaração de hipossuficiência. Gastos do extrato somados quando houver.
+
+  // Ordem da renda: comprovante > créditos do extrato > ficha. Socioeconômico da pasta que não é ficha entra como está.
   R.socioDoCliente = function (o) {
-    const s = String(o.socioDocx || "").trim().replace(/\s+/g, " ");
-    if (s) return { texto: s, fonte: "socioeconômico da pasta" };
+    const s = String(o.ficha || o.socioDocx || "").trim().replace(/\s+/g, " "), ficha = R.lerFicha(s);
+    if (s && !ficha) return { texto: s, fonte: "socioeconômico da pasta" };
     const vistos = new Set(), lanc = (o.lanc || []).concat(R.lancDoTexto(o.hipoTxt)).filter(l => {   // HIPO e extrato podem repetir o mesmo débito
       const k = l.data + "|" + (l.deb || "") + "|" + (l.cred || ""); if (vistos.has(k)) return false; vistos.add(k); return true; });
-    const g = R.gastosExtrato(lanc), renda = o.renda || R.rendaDosLancamentos(lanc);
-    const fg = g ? " + gastos do extrato" : "";
-    if (o.cc) return { texto: comGastos(R.textoSocio(o.cc), g, o.cc.liq), fonte: "comprovante de pagamento" + fg, bruto: o.cc.bruto, gastos: g };
-    if (renda) return { texto: comGastos(R.textoSocioExtrato(renda), g, renda.media), fonte: "créditos de " + renda.tipo + " no extrato" + fg, bruto: renda.media, gastos: g };
-    return { texto: comGastos(R.textoSocioDeclaracao(R.profissaoDeclarada(o.qualificacao)), g, 0),
-      fonte: "declaração de hipossuficiência (sem comprovante de renda legível)" + fg, generico: true, gastos: g };
+    const g = R.gastosExtrato(lanc), renda = o.cc ? null : (o.renda || R.rendaDosLancamentos(lanc));
+    const fonte = [ficha && "ficha socioeconômica", o.cc && "comprovante de pagamento", renda && "créditos de " + renda.tipo + " no extrato", g && "gastos do extrato"]
+      .filter(Boolean).join(" + ");
+    const bruto = o.cc ? o.cc.bruto : renda ? renda.media : ficha && ficha.renda ? (ficha.renda.v2 || ficha.renda.v1) : null;
+    if (!ficha && !o.cc && !renda) {
+      let t = R.textoSocioDeclaracao(R.profissaoDeclarada(o.qualificacao));
+      if (g) t += ". " + R.montarSocio({ gastos: g });
+      return { texto: t, fonte: "declaração de hipossuficiência (sem comprovante de renda legível)" + (g ? " + gastos do extrato" : ""), generico: true, gastos: g };
+    }
+    let texto = R.montarSocio({ ficha, cc: o.cc, renda, gastos: g });
+    if (ficha && ficha.sexo) texto = R.generoTexto(texto, ficha.sexo);
+    const docV = o.cc ? o.cc.bruto : renda ? renda.media : null, fr = ficha && ficha.renda;   // documento vale mais que a ficha
+    const conflito = fr && docV != null && docV > (fr.v2 || fr.v1) ? "A ficha informa renda " + (fr.tipo === "ate" ? "de até" : "de") + " R$ " + R.fmt(fr.v2 || fr.v1) +
+      ", mas " + (o.cc ? "o comprovante de pagamento mostra R$ " : "o extrato mostra R$ ") + R.fmt(docV) + " — o texto usa o documento; confira com o comercial." : null;
+    return { texto, fonte, bruto, gastos: g, ficha, conflito };
   };
 
   // Códigos do LexPRE → nome completo do desconto (como no extrato). Código fora da lista: sublinhado vira espaço e o app avisa.

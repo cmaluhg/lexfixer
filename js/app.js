@@ -601,8 +601,9 @@
     const aud = pl && pl.grupos.length && lanc.length ? LEXRJ.auditarTabela(pl.grupos, lanc) : null;   // também completa o contrato (d.opPeca)
     const reg = pl && pl.grupos.length ? LEXRJ.regrasOperacao("RJ", pl.grupos) : null;   // decenal: o que tem mais de 10 anos sai
     if (pl) LEXRJ.refazerTotais(pl);   // linhas de compra/prescritas saem ou são corrigidas
-    const socio = LEXRJ.socioDoCliente({ socioDocx, cc, renda, lanc, hipoTxt: cc ? "" : hipoTxt, qualificacao: outorg && outorg.qualificacao });   // nunca vazio
-    state.rj = { pl, cc, outorg, aud, reg, socio, peticao: arqs.peticao || null };
+    const socioIn = { cc, renda, lanc, hipoTxt: cc ? "" : hipoTxt, qualificacao: outorg && outorg.qualificacao };
+    const socio = LEXRJ.socioDoCliente(Object.assign({ socioDocx }, socioIn));   // nunca vazio
+    state.rj = { pl, cc, outorg, aud, reg, socio, socioIn, peticao: arqs.peticao || null };
 
     // preenche o formulário (tudo editável)
     $("#rjQualif").value = outorg ? outorg.qualificacao : "";
@@ -730,6 +731,15 @@
       $("#rjSaida").innerHTML = h;
     } catch (e) { $("#rjSaida").innerHTML = "<div class='warn-box' style='background:#fdecea;border-color:#e74c3c;color:#922'>⚠️ Falha ao montar a peça: " + esc((e && e.message) || e) + "</div>"; }
   });
+  // LA RJ: ficha do comercial colada no campo ("O autor mora em casa alugada, é único(a) provedor(a)…") vira texto corrido com os documentos.
+  $("#socioTexto").addEventListener("change", function () {
+    const rj = state.rj;
+    if (opAtual() !== "RJ" || !rj || !LEXRJ.lerFicha(this.value)) return;
+    rj.socio = LEXRJ.socioDoCliente(Object.assign({ ficha: this.value }, rj.socioIn));
+    this.value = rj.socio.texto;
+    $("#rjSaida").innerHTML = rj.socio.conflito ? "<div class='warn-box'>⚠️ " + esc(rj.socio.conflito) + "</div>" : "";
+  });
+
   // LA RJ: corrige a peça automática do LexPRE (texto socioeconômico e nome completo das rubricas), sem mexer no resto.
   $("#btnCorrigirRJ").addEventListener("click", async function () {
     const rj = state.rj, f = rj && rj.peticao;
