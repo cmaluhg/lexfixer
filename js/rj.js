@@ -322,6 +322,64 @@
       " Com essa renda, a parte autora não tem condições de arcar com as custas processuais e os honorários advocatícios sem prejuízo do próprio sustento.";
   };
 
+  // HIPO em forma de extrato bancário: créditos de salário, benefício, pensão ou aposentadoria (só o que o extrato mostra).
+  const RE_RENDA = /(CRED(?:ITO)?\.? (?:DE )?SALARIO|PAG(?:TO|AMENTO)?\.? (?:DE )?SALARIO|SALARIO|INSS|BENEFICIO|PROVENTOS?|PENSAO|APOSENTADORIA)/;
+  R.lerRendaExtrato = function (texto) {
+    const t = up(texto).replace(/\s+/g, " "), porMes = {};
+    for (const p of t.split(/(?=\b\d{2}\/\d{2}\/\d{4}\b)/)) {
+      const d = p.match(/^(\d{2})\/(\d{2})\/(\d{4})/); if (!d || /ESTORNO|DEVOL/.test(p)) continue;
+      const m = p.match(new RegExp(RE_RENDA.source + "[^]{0,80}?(\\d{1,3}(?:\\.\\d{3})*,\\d{2})"));
+      if (!m) continue;
+      const val = R.num(m[2]); if (!(val > 0)) continue;
+      const k = d[3] + "-" + d[2]; porMes[k] = porMes[k] || { mes: d[2] + "/" + d[3], val: 0, tipos: {} };
+      porMes[k].val = Math.round((porMes[k].val + val) * 100) / 100; porMes[k].tipos[m[1]] = 1;
+    }
+    const meses = Object.keys(porMes).sort().map(k => porMes[k]).slice(-3);
+    if (!meses.length) return null;
+    const tp = Object.keys(Object.assign({}, ...meses.map(m => m.tipos))).join(" ");
+    const tipo = /PENSAO/.test(tp) ? "pensão" : /APOSENT|PROVENTO/.test(tp) ? "proventos" : /INSS|BENEFICIO/.test(tp) ? "benefício previdenciário" : "salário";
+    return { meses, tipo, media: Math.round(meses.reduce((s, m) => s + m.val, 0) / meses.length * 100) / 100 };
+  };
+  R.textoSocioExtrato = function (re) {
+    const per = re.meses.length === 1 ? "de R$ " + R.fmt(re.media) + " em " + re.meses[0].mes
+      : "de R$ " + R.fmt(re.media) + ", em média, nos meses de " + re.meses[0].mes + " a " + re.meses[re.meses.length - 1].mes;
+    return "Os extratos bancários anexos registram créditos de " + re.tipo + " " + per + ". Com essa renda, a parte autora não tem condições de arcar" +
+      " com as custas processuais e os honorários advocatícios sem prejuízo do próprio sustento.";
+  };
+  // Sem comprovante legível: usa a declaração de hipossuficiência (JUS) e a profissão declarada nela. Nunca fica vazio.
+  R.profissaoDeclarada = function (qualif) {
+    const p = String(qualif || "").split(",").map(s => s.trim())[3];   // NOME, NACIONALIDADE, ESTADO CIVIL, PROFISSÃO, RG…
+    return p && !/\bRG\b|CPF|RESIDENTE|PORTADOR/i.test(p) ? p : null;
+  };
+  R.textoSocioDeclaracao = prof => "A parte autora" + (prof ? ", que se qualifica como " + prof.toLowerCase() + "," : "") +
+    " declarou, na declaração de hipossuficiência anexa, não dispor de condições financeiras para arcar com as custas e despesas do processo" +
+    " sem prejuízo do sustento próprio ou de sua família";   // sem ponto: o modelo continua com ", de modo que…"
+  // Ordem: socioeconômico do comercial > contracheque > créditos do extrato > declaração de hipossuficiência.
+  R.socioDoCliente = function (o) {
+    const s = String(o.socioDocx || "").trim().replace(/\s+/g, " ");
+    if (s) return { texto: s, fonte: "socioeconômico da pasta" };
+    if (o.cc) return { texto: R.textoSocio(o.cc), fonte: "comprovante de pagamento", bruto: o.cc.bruto };
+    if (o.renda) return { texto: R.textoSocioExtrato(o.renda), fonte: "créditos de " + o.renda.tipo + " no extrato", bruto: o.renda.media };
+    return { texto: R.textoSocioDeclaracao(R.profissaoDeclarada(o.qualificacao)), fonte: "declaração de hipossuficiência (sem comprovante de renda legível)", generico: true };
+  };
+
+  // Códigos do LexPRE → nome completo do desconto (como no extrato). Código fora da lista: sublinhado vira espaço e o app avisa.
+  R.RUBRICAS = {
+    BX_ANT_FIN: "BAIXA ANTECIPADA DE FINANCIAMENTO/EMPRÉSTIMO", CESTA: "CESTA DE SERVIÇOS", ANUIDADE: "ANUIDADE",
+    ENCARGOS_LIMITE_CRED: "ENCARGOS LIMITE DE CRÉDITO", ENCARGO_LIM_CRED: "ENCARGOS LIMITE DE CRÉDITO",
+    ENCARGOS_DESCOBERTOS: "ENCARGOS DE SALDO DESCOBERTO", ENCARGOS_EXCESSO: "ENCARGOS DE EXCESSO DE LIMITE",
+    MORA_CRED_PESS: "MORA CRÉDITO PESSOAL", PARC_CRED_PESS: "PARCELA CRÉDITO PESSOAL", MORA_CEL: "MORA CONTA DE TELEFONE",
+    MORA_OPERACOES: "MORA DE OPERAÇÕES", MORA_C_CREDITO: "MORA CARTÃO DE CRÉDITO",
+    TIT_CAP: "TÍTULO DE CAPITALIZAÇÃO", GASTO_C_CRED: "GASTOS CARTÃO DE CRÉDITO", OP_VENCIDAS: "OPERAÇÕES VENCIDAS",
+    DIV_ATRASO: "DÍVIDA EM ATRASO", AD_DEPOSITANTE: "ADIANTAMENTO A DEPOSITANTE", "PARC AUTOMATICO": "PARCELAMENTO AUTOMÁTICO",
+    REFINANCIAMENTO_IND: "REFINANCIAMENTO INDEVIDO", REORG_FINAN: "REORGANIZAÇÃO FINANCEIRA", JUROS_ABUSIVOS: "JUROS ABUSIVOS",
+    EMISSAO_EXTRATO: "TARIFA EMISSÃO DE EXTRATO", EXTRATO_MOVIMENTO: "EXTRATO DE MOVIMENTO", SAQUE_TERMINAL: "SAQUE EM TERMINAL",
+    SAQUE_CORRESPONDENTE: "SAQUE EM CORRESPONDENTE", VIDA_PREV: "VIDA E PREVIDÊNCIA", SEGURO_CARTAO: "SEGURO CARTÃO",
+    COBRANCA_IND: "COBRANÇA INDEVIDA", INV_FACIL: "INVEST FÁCIL", RMC: "RESERVA DE MARGEM CONSIGNÁVEL (RMC)",
+    RCC: "RESERVA DE CARTÃO CONSIGNADO (RCC)",
+  };
+  R.nomeRubrica = c => { const k = up(c).trim().replace(/\s+/g, " "); return R.RUBRICAS[k] || R.RUBRICAS[k.replace(/ /g, "_")] || null; };
+
   /* ------------------------------ montagem do .docx ------------------------------ */
   const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const txt = p => (p.match(/<w:t(?:\s[^>]*)?>[^<]*<\/w:t>/g) || []).map(t => t.replace(/<[^>]+>/g, "")).join("")
@@ -426,6 +484,72 @@
     if (d.grupos && d.grupos.length > 1) x = x.replace("individualizados na tabela abaixo", "individualizados nas tabelas abaixo");
     const sobra = (x.replace(/<[^>]+>/g, "").match(/\[(?:#|\/)?[A-Z_ ]{3,}\]/g) || []);
     return { xml: x, sobra, log };
+  };
+
+  /* ------------------------------ peça automática do LexPRE (RJ): correção ------------------------------ */
+  const unesc = s => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+  // Troca trechos do texto do parágrafo mesmo com a palavra partida em vários <w:t>; mantém <w:br/>, negrito e demais runs.
+  function trocarNoPara(p, re, fn) {
+    const segs = []; let full = "";
+    // <w:br/>/<w:tab/> viram "\n" no texto corrido: o código antes da quebra não gruda no seguinte
+    p.replace(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>|<w:(?:br|tab|cr)\b[^>]*\/>/g, (m, t, off) => {
+      if (t == null) { full += "\n"; return m; }
+      segs.push({ off, len: m.length, t: unesc(t), ini: full.length }); full += unesc(t); return m; });
+    const ms = [];
+    full.replace(re, function () { const a = Array.from(arguments), m = a[0], off = a[a.length - 2]; if (m) ms.push({ s: off, e: off + m.length, r: fn.apply(null, a) }); return m; });
+    if (!ms.length) return p;
+    const mud = new Set();
+    for (const m of ms.reverse()) {
+      const cob = segs.filter(s => s.ini < m.e && s.ini + s.t.length > m.s);
+      cob.forEach((s, i) => {
+        const a = Math.max(0, m.s - s.ini), b = m.e - s.ini;
+        s.t = (i === 0 ? s.t.slice(0, a) + m.r : "") + (b < s.t.length ? s.t.slice(b) : "");
+        mud.add(s);
+      });
+    }
+    let out = p;
+    segs.slice().reverse().forEach(s => { if (mud.has(s)) out = out.slice(0, s.off) + '<w:t xml:space="preserve">' + esc(s.t) + "</w:t>" + out.slice(s.off + s.len); });
+    return out;
+  }
+  R._trocarNoPara = trocarNoPara;
+  const L = "A-Za-zÀ-ÿ0-9_\\[";   // letra, dígito, sublinhado ou "[" (marcas [TEXTO_SOCIO] etc. não são rubricas)
+  const RE_COD = new RegExp("(?<![" + L + "])([A-ZÀ-Ú][A-ZÀ-Ú0-9]*(?:_[A-ZÀ-Ú0-9]+)+|PARC AUTOMATICO)(?![" + L + "\\]])", "g");
+  const RE_COD_SIMPLES = new RegExp("(?<![" + L + "])(CESTA|RMC|RCC)(?![" + L + "\\]])", "g");   // só em parágrafo de texto que fala de rubricas
+
+  /* d = { socio: texto (do R.socioDoCliente) }. Devolve o xml corrigido e o que mudou. */
+  R.corrigirAutomatica = function (docXml, d) {
+    const head = docXml.slice(0, docXml.indexOf("<w:body>") + 8), fimBody = docXml.lastIndexOf("</w:body>");
+    const partes = docXml.slice(head.length, fimBody).split(/(<w:p[ >][\s\S]*?<\/w:p>)/), tail = docXml.slice(fimBody);
+    const socio = String(d.socio || "").trim().replace(/\s+/g, " ");
+    const trocas = {}, desconhecidas = {}, out = [];
+    let socioOk = false, naGrat = false;
+    const nome = c => { const n = R.nomeRubrica(c); if (!n) desconhecidas[c] = 1; const r = n || c.replace(/_/g, " "); trocas[c] = r; return r; };
+    // texto que já fecha a frase substitui o parágrafo; senão completa com o fecho do modelo (", de modo que…")
+    const paraSocio = (pp, rp, resto) => { const s = socio.replace(/[;,]$/, "");
+      return para(pp, rp, /[.!?]$/.test(s) ? s : resto ? s + resto : s + "."); };
+    for (let i = 0; i < partes.length; i++) {
+      let p = partes[i];
+      if (i % 2 === 0) { out.push(p); continue; }
+      const t = txt(p).replace(/ /g, " ").trim(), pp = ppr(p), rp = semNegrito(rpr1(p));
+      if (/^\d+(\.\d+)*\.?\s/.test(t)) naGrat = /GRATUI/.test(up(t));   // título numerado abre/fecha o item da gratuidade
+      // [TEXTO_SOCIO] literal ou vazio (LexPRE deixa ", de modo que…" sem o começo)
+      const m = t.match(/^\[TEXTO_SOCIO\]\s*(.*)$/) || (naGrat && t.match(/^(,?\s*de modo que a imposi[çc][ãa]o[\s\S]*)$/i));
+      if (m && socio) {
+        const resto = m[1] ? (/^,/.test(m[1]) ? m[1] : ", " + m[1]) : "";
+        out.push(paraSocio(pp, rp, resto)); socioOk = true; continue;
+      }
+      if (socio && t.indexOf("[TEXTO_SOCIO]") >= 0) { p = trocarNoPara(p, /\[TEXTO_SOCIO\]/g, () => socio.replace(/[.;,]$/, "")); socioOk = true; }
+      // item da gratuidade sem texto do cliente: entra antes do parágrafo fixo dos arts. 98 e 99
+      if (naGrat && !socioOk && socio && /^Nos termos dos arts\. 98 e 99/.test(t)) { out.push(paraSocio(pp, rp, "")); socioOk = true; }
+      if (/[a-zà-ÿ]/.test(t)) {   // título todo em maiúsculas fica como está
+        p = trocarNoPara(p, RE_COD, nome);
+        if (/rubrica|REFERENTE A/i.test(t)) p = trocarNoPara(p, RE_COD_SIMPLES, nome);
+      }
+      out.push(p);
+    }
+    const x = head + out.join("") + tail;
+    const sobra = [...new Set(x.replace(/<[^>]+>/g, "").match(/\[(?:#|\/)?[A-Z_ ]{3,}\]/g) || [])];
+    return { xml: x, trocas, desconhecidas: Object.keys(desconhecidas), socioIncluido: socioOk, sobra };
   };
 
   if (typeof window !== "undefined") window.LEXRJ = R;

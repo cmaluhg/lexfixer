@@ -17,7 +17,7 @@
     <h2><span class="step">0</span>Sua operação</h2>
     <div class="ops" role="radiogroup" aria-label="Operação">
       <label class="op"><input type="radio" name="op" value="AM" checked> <b>LA AM</b><span class="hint">corrige a peça gerada pelo LexPRE</span></label>
-      <label class="op"><input type="radio" name="op" value="RJ"> <b>LA RJ</b><span class="hint">monta a peça de rubricas reunidas a partir dos documentos e da tabela</span></label>
+      <label class="op"><input type="radio" name="op" value="RJ"> <b>LA RJ</b><span class="hint">monta a peça de rubricas reunidas a partir dos documentos e da tabela, ou corrige a peça automática do LexPRE</span></label>
       <label class="op"><input type="radio" name="op" value="NG"> <b>NG</b><span class="hint">corrige a peça gerada pelo LexPRE</span></label>
     </div>
   </div>
@@ -105,6 +105,7 @@
         </div>
       </div>
       <button id="btnGerarRJ" class="gold" style="margin-top:14px">⚖️ Gerar peça RJ</button>
+      <button id="btnCorrigirRJ" class="gold hidden" style="margin-top:14px">🔧 Corrigir peça automática do LexPRE</button>
       <div id="rjSaida" style="margin-top:10px"></div>
     </div>
 
@@ -123,7 +124,7 @@
   </div>
 </main>
 
-<footer>LexFixer · roda 100% no navegador · consulte o Manual do escritório para as regras completas. · <span id="versao">v2026.10.22-38</span></footer>
+<footer>LexFixer · roda 100% no navegador · consulte o Manual do escritório para as regras completas. · <span id="versao">v2026.11.11-39</span></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>

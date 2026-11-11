@@ -116,4 +116,38 @@ const pc = R.planilhaRJ([{ nome: "Todos os Descontos", linhas: [["05/08/2024", "
   { nome: "Pacotes e Cestas", linhas: [["05/08/2024", "PACOTE DE SERVICOS", "0010724", 15.95], ["04/09/2024", "PACOTE DE SERVICOS", "0010824", 15.95]] }]);
 assert.deepStrictEqual([pc.grupos.map(g => g.aba), pc.total], [["Pacotes e Cestas"], 31.9]);
 
+// peça automática do LexPRE: nome completo das rubricas (mesmo com o código partido em runs e separado por <w:br/>)
+assert.strictEqual(R.nomeRubrica("MORA_CRED_PESS"), "MORA CRÉDITO PESSOAL"); assert.strictEqual(R.nomeRubrica("XPTO_Z"), null);
+const RUN = t => '<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">' + t + "</w:t></w:r>";
+assert.strictEqual(R._trocarNoPara("<w:p>" + RUN("sob MORA_CR") + RUN("ED_PESS e") + "</w:p>", /MORA_CRED_PESS/g, () => "X"),
+  '<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">sob X</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve"> e</w:t></w:r></w:p>');
+const auto = '<w:document><w:body>' + [P("GRATUIDADE DE JUSTIÇA"), P("1.1. DO PEDIDO DE JUSTIÇA GRATUITA"), P("[TEXTO_SOCIO], de modo que fecho."),
+  P("Nos termos dos arts. 98 e 99, fixo."), P("2. DOS FATOS"), P("sob as rubricas “BX_ANT_FIN, CESTA e XPTO_Z”, na conta [CONTA]."),
+  "<w:p>" + RUN("TIT_CAP: restituição") + "<w:r><w:br/></w:r>" + RUN("ESPAÇO PARA COLAR IMAGEM DA TABELA REFERENTE A TIT_CAP") + "<w:r><w:br/></w:r>" + RUN("CESTA: restituição") + "</w:p>",
+  P("DA CESTA DE TARIFAS")].join("") + "</w:body></w:document>";
+let ra = R.corrigirAutomatica(auto, { socio: "A parte autora declarou X" });
+const tA = LEX.paraTextos(ra.xml);
+assert.strictEqual(tA[2], "A parte autora declarou X, de modo que fecho.");
+assert.strictEqual(tA[5], "sob as rubricas “BAIXA ANTECIPADA DE FINANCIAMENTO/EMPRÉSTIMO, CESTA DE SERVIÇOS e XPTO Z”, na conta [CONTA].");
+assert.strictEqual(tA[6], "TÍTULO DE CAPITALIZAÇÃO: restituiçãoESPAÇO PARA COLAR IMAGEM DA TABELA REFERENTE A TÍTULO DE CAPITALIZAÇÃOCESTA DE SERVIÇOS: restituição");
+assert.strictEqual(tA[7], "DA CESTA DE TARIFAS", "título em maiúsculas não muda");
+assert.deepStrictEqual([ra.socioIncluido, ra.desconhecidas, ra.sobra], [true, ["XPTO_Z"], ["[CONTA]"]]);
+// LexPRE deixou o começo vazio (", de modo que…") e texto que já fecha a frase substitui o parágrafo
+ra = R.corrigirAutomatica(auto.replace("[TEXTO_SOCIO], de modo que", ", de modo que a imposição"), { socio: "Renda de R$ 1,00." });
+assert.strictEqual(LEX.paraTextos(ra.xml)[2], "Renda de R$ 1,00.");
+// item da gratuidade sem o parágrafo do cliente: entra antes do fixo dos arts. 98 e 99
+ra = R.corrigirAutomatica(auto.replace(P("[TEXTO_SOCIO], de modo que fecho."), ""), { socio: "Texto do cliente" });
+assert.deepStrictEqual(LEX.paraTextos(ra.xml).slice(2, 4), ["Texto do cliente.", "Nos termos dos arts. 98 e 99, fixo."]);
+
+// texto socioeconômico: nunca vazio; extrato com crédito de salário; senão a declaração (profissão declarada)
+const re = R.lerRendaExtrato("Data Histórico 03/09/2025 CREDITO DE SALARIO SECRETARIA DE ESTADO 0306876 6.045,49 6.045,49 TED ENV P/ C 9484765 6.045,49 0,00 " +
+  "03/10/2025 CREDITO DE SALARIO SECRETARIA 0306876 2.000,00 2.000,00 05/10/2025 PIX TRANSF 50,00 03/11/2025 CREDITO DE SALARIO X 0506876 1.000,00 1.000,00");
+assert.deepStrictEqual([re.tipo, re.meses.map(m => m.val), re.media], ["salário", [6045.49, 2000, 1000], 3015.16]);
+assert.match(R.textoSocioExtrato(re), /^Os extratos bancários anexos registram créditos de salário de R\$ 3\.015,16, em média, nos meses de 09\/2025 a 11\/2025\./);
+assert.strictEqual(R.lerRendaExtrato("29/06/2026 PIX TRANSF VANESSA 30,00 29/06/2026 DEP DIN ATM 690,00"), null);
+const sd = R.socioDoCliente({ qualificacao: "FULANO, BRASILEIRO(A), CASADO(A), DESEMPREGADO, RG nº 1" });
+assert.ok(sd.generico && /^A parte autora, que se qualifica como desempregado, declarou, na declaração de hipossuficiência anexa/.test(sd.texto));
+assert.ok(R.socioDoCliente({}).texto.length > 50, "sem nenhum dado o texto não fica vazio");
+assert.strictEqual(R.socioDoCliente({ socioDocx: " Texto do comercial ", cc }).texto, "Texto do comercial");
+
 console.log("test_rj: OK");

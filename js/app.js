@@ -589,13 +589,20 @@
       if (!f || outorg) continue;
       try { outorg = LEXRJ.extrairOutorgante(await lerPdfTexto(f)); } catch (e) { avisos.push(f.name + " (" + dicaArquivo(e) + ")"); }
     }
-    try { cc = hipo ? LEXRJ.lerContracheque(await lerPdfTexto(hipo)) : null; } catch (e) { avisos.push("comprovante de renda (" + dicaArquivo(e) + ")"); }
+    let renda = null, socioDocx = "";
+    try {
+      const hipoTxt = hipo ? await lerPdfTexto(hipo) : "";
+      cc = hipoTxt ? LEXRJ.lerContracheque(hipoTxt) : null;
+      renda = !cc && hipoTxt ? LEXRJ.lerRendaExtrato(hipoTxt) : null;   // HIPO que é extrato bancário: créditos de salário/benefício
+    } catch (e) { avisos.push("comprovante de renda (" + dicaArquivo(e) + ")"); }
+    try { socioDocx = arqs.socio ? await lerDocxTexto(arqs.socio) : ""; } catch (e) { avisos.push("socioeconômico (" + dicaArquivo(e) + ")"); }
     const nomes = lista.map(f => (f.webkitRelativePath || "") + " " + f.name).join(" ");
     const banco = LEXRJ.detectarBanco(nomes + " " + extTxt.slice(0, 3000));
     const aud = pl && pl.grupos.length && lanc.length ? LEXRJ.auditarTabela(pl.grupos, lanc) : null;   // também completa o contrato (d.opPeca)
     const reg = pl && pl.grupos.length ? LEXRJ.regrasOperacao("RJ", pl.grupos) : null;   // decenal: o que tem mais de 10 anos sai
     if (pl) LEXRJ.refazerTotais(pl);   // linhas de compra/prescritas saem ou são corrigidas
-    state.rj = { pl, cc, outorg, aud, reg };
+    const socio = LEXRJ.socioDoCliente({ socioDocx, cc, renda, qualificacao: outorg && outorg.qualificacao });   // nunca vazio
+    state.rj = { pl, cc, outorg, aud, reg, socio, peticao: arqs.peticao || null };
 
     // preenche o formulário (tudo editável)
     $("#rjQualif").value = outorg ? outorg.qualificacao : "";
@@ -605,7 +612,8 @@
     $("#rjReuOutro").classList.toggle("hidden", !!banco);
     const cond = pl ? LEXRJ.classificar(pl.grupos.length ? pl.grupos.map(g => g.aba) : pl.rubricas) : {};
     ["TARIFAS", "CREDITO", "SEGURO", "NAO_IDENTIFICADA"].forEach(k => { $("#rjCond" + k).checked = !!cond[k]; });
-    { const ta = $("#socioTexto"); if (ta && cc) ta.value = LEXRJ.textoSocio(cc); }
+    { const ta = $("#socioTexto"); if (ta) ta.value = socio.texto; }
+    $("#btnCorrigirRJ").classList.toggle("hidden", !arqs.peticao);
 
     let h = "";
     if (pl && pl.grupos.length) {
@@ -622,7 +630,12 @@
     if (cc) {
       h += "<br><b>Comprovante de renda:</b> " + esc(cc.orgao || "?") + " · " + cc.meses.map(m => esc(m.comp)).join(", ") + " · bruto médio R$ " + LEXRJ.fmt(cc.bruto) + " · líquido médio R$ " + LEXRJ.fmt(cc.liq);
       if (cc.bruto > 5000) h += "<div class='warn-box'>Renda bruta acima de R$ 5.000,00 (parâmetro da ADC 80): a gratuidade depende da demonstração concreta — o advogado deve avaliar.</div>";
-    } else h += "<br><b>Comprovante de renda:</b> <span class='hint'>formato não reconhecido (ou ausente) — escreva o texto socioeconômico abaixo com os dados dos documentos.</span>";
+    } else if (renda) {
+      h += "<br><b>Renda no extrato (HIPO):</b> créditos de " + esc(renda.tipo) + " · " + renda.meses.map(m => esc(m.mes) + " R$ " + LEXRJ.fmt(m.val)).join(", ");
+      if (renda.media > 5000) h += "<div class='warn-box'>Créditos acima de R$ 5.000,00 (parâmetro da ADC 80): a gratuidade depende da demonstração concreta — o advogado deve avaliar.</div>";
+    } else h += "<br><b>Comprovante de renda:</b> <span class='hint'>formato não reconhecido (ou ausente).</span>";
+    h += "<br><b>Texto socioeconômico:</b> " + esc(socio.fonte) + (socio.generico ? " <span style='color:#922'>— texto com base só na declaração; complete com a realidade do cliente se tiver o dado</span>" : "");
+    if (arqs.peticao) h += "<br><b>Peça automática do LexPRE:</b> ✅ " + esc(arqs.peticao.name) + " <span class='hint'>— use o botão “Corrigir peça automática”</span>";
     if (avisos.length) h += "<div class='warn-box' style='background:#fdecea;border:1px solid #f5b7b1;color:#7b1a13;margin-top:12px'>⚠️ Não consegui ler: " + esc(avisos.join(" · ")) + "</div>";
     $("#dados").innerHTML = h;
     { const a = document.getElementById("rjBaixarAud"); if (a) a.addEventListener("click", function (e) { e.preventDefault(); baixarAuditoriaCsv(aud); }); }
@@ -714,6 +727,31 @@
       h += av.map(a => "<div class='warn-box'>" + a + "</div>").join("");
       $("#rjSaida").innerHTML = h;
     } catch (e) { $("#rjSaida").innerHTML = "<div class='warn-box' style='background:#fdecea;border-color:#e74c3c;color:#922'>⚠️ Falha ao montar a peça: " + esc((e && e.message) || e) + "</div>"; }
+  });
+  // LA RJ: corrige a peça automática do LexPRE (texto socioeconômico e nome completo das rubricas), sem mexer no resto.
+  $("#btnCorrigirRJ").addEventListener("click", async function () {
+    const rj = state.rj, f = rj && rj.peticao;
+    if (!f) { alert("Não encontrei a peça automática (.docx) na pasta do cliente."); return; }
+    const sx = document.querySelector("input[name=sexo]:checked");
+    let socio = ($("#socioTexto").value || "").trim();
+    if (!socio) { alert("O texto socioeconômico está vazio: escreva com os dados do cliente antes de corrigir."); return; }
+    if (sx) socio = LEXRJ.generoTexto(socio, sx.value);
+    try {
+      const zip = await JSZip.loadAsync(await lerBytes(f));
+      const r = LEXRJ.corrigirAutomatica(await zip.file("word/document.xml").async("string"), { socio });
+      zip.file("word/document.xml", r.xml);
+      const blob = await zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+      const nome = f.name.replace(/\.docx?$/i, "") + " - CORRIGIDA.docx";
+      let h = '<a class="dl" href="' + URL.createObjectURL(blob) + '" download="' + esc(nome) + '">⬇️ Baixar peça automática corrigida (.docx)</a>';
+      const av = [], tr = Object.keys(r.trocas);
+      av.push(r.socioIncluido ? "Texto socioeconômico incluído (" + esc(rj.socio.fonte) + ")." : "<b>Não achei onde incluir o texto socioeconômico</b> (item da gratuidade) — inclua à mão.");
+      if (tr.length) av.push("Rubricas com o nome completo: " + tr.map(c => esc(c) + " → " + esc(r.trocas[c])).join(" · "));
+      if (r.desconhecidas.length) av.push("<b>Código sem nome cadastrado:</b> " + r.desconhecidas.map(esc).join(", ") + " — saiu sem o sublinhado; confira o nome do desconto no extrato.");
+      if (r.sobra.length) av.push("<b>Campos ainda não preenchidos:</b> " + esc(r.sobra.join(" ")) + " — completar no Word antes do protocolo.");
+      if (rj.socio.generico) av.push("Texto socioeconômico feito só com a declaração de hipossuficiência: complete com renda e realidade do cliente se tiver o documento.");
+      h += av.map(a => "<div class='warn-box'>" + a + "</div>").join("");
+      $("#rjSaida").innerHTML = h;
+    } catch (e) { $("#rjSaida").innerHTML = "<div class='warn-box' style='background:#fdecea;border-color:#e74c3c;color:#922'>⚠️ Falha ao corrigir a peça: " + esc((e && e.message) || e) + "</div>"; }
   });
   aplicarOp();   // estado inicial da tela conforme a operação escolhida
 
