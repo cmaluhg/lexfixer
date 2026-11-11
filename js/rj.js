@@ -334,9 +334,35 @@
     const p = String(qualif || "").split(",").map(s => s.trim())[3];   // NOME, NACIONALIDADE, ESTADO CIVIL, PROFISSÃO, RG…
     return p && !/\bRG\b|CPF|RESIDENTE|PORTADOR/i.test(p) ? p : null;
   };
-  R.textoSocioDeclaracao = prof => "A parte autora" + (prof ? ", que se qualifica como " + prof.toLowerCase() + "," : "") +
-    " declarou, na declaração de hipossuficiência anexa, não dispor de condições financeiras para arcar com as custas e despesas do processo" +
-    " sem prejuízo do sustento próprio ou de sua família";   // sem ponto: o modelo continua com ", de modo que…"
+  // Profissão da qualificação → como a pessoa vive ("está desempregada", "trabalha como operadora de caixa"). Concorda com "a parte autora".
+  R.ocupacao = function (prof) {
+    const u = up(prof || "").trim();
+    if (!u) return null;
+    if (/DESEMPREGAD/.test(u)) return { frase: "está desempregada", status: true };
+    if (/DO LAR|DONA DE CASA/.test(u)) return { frase: "cuida do lar", status: true };
+    if (/APOSENTAD/.test(u)) return { frase: "é aposentada", status: true };
+    if (/PENSIONISTA/.test(u)) return { frase: "é pensionista", status: true };
+    if (/ESTUDANTE/.test(u)) return { frase: "é estudante", status: true };
+    if (/AUTONOM/.test(u)) return { frase: "trabalha como autônoma", status: false, prof: "autônomo(a)" };
+    const p = String(prof).trim().toLowerCase();
+    return { frase: "trabalha como " + p, status: false, prof: p };
+  };
+  const CIVIL = [[/SOLTEIR/, "solteira"], [/CASAD/, "casada"], [/VIUV/, "viúva"], [/DIVORCIAD/, "divorciada"], [/SEPARAD/, "separada"], [/UNIAO ESTAVEL|CONVIVENTE/, "em união estável"]];
+  /* Sem ficha e sem comprovante de renda: conta a vida do cliente com o que a qualificação e o extrato mostram (estado civil,
+     ocupação, cidade e gastos). Sem ponto final: o modelo continua com ", de modo que…". */
+  R.textoSocioPerfil = function (qualif, g) {
+    const ps = String(qualif || "").split(",").map(s => s.trim());
+    const civ = CIVIL.find(c => c[0].test(up(ps[2] || ""))), oc = R.ocupacao(R.profissaoDeclarada(qualif));
+    const cid = String(qualif || "").match(/CEP:?\s*[\d.\-]+,\s*([^,]+?)\s*[-\/]\s*([A-Z]{2})\s*\.?\s*$/i);
+    let s = "A parte autora" + (civ ? ", " + civ[1] + "," : "") + (oc ? " " + oc.frase : "") + (cid ? (oc ? " e" : "") + " reside em " + R.titulo(cid[1]) + "/" + cid[2].toUpperCase() : "");
+    if (!oc && !cid) s = "A parte autora" + (civ ? ", " + civ[1] + "," : "") + " mantém o próprio sustento com recursos limitados";
+    const base = (oc && oc.frase === "está desempregada" ? "Mesmo sem emprego, precisa arcar" : "Com o que recebe, arca") +
+      " com as despesas de moradia, alimentação, transporte e contas de água e luz";
+    if (!g) return s + ". " + base;
+    const lst = g.itens.map(i => "R$ " + R.fmt(i.media) + " com " + i.cat);
+    return s + ". " + base + ", e os extratos bancários anexos registram, " + (g.nMeses > 1 ? "em média por mês, " : "") + R.listaRubricas(lst) +
+      " (" + (g.de === g.ate ? g.de : g.de + " a " + g.ate) + ")";
+  };
   // Renda pelos créditos do extrato principal (lançamentos do R.extratoBradesco), mesma regra do HIPO.
   R.rendaDosLancamentos = lanc => R.lerRendaExtrato((lanc || []).filter(l => l.cred > 0 && !l.ultimos && l.data)
     .map(l => l.data + " " + l.hist + " " + (l.compl || "") + " " + R.fmt(l.cred)).join(" "));
@@ -414,7 +440,8 @@
     const f = o.ficha, cc = o.cc, re = o.renda, g = o.gastos, fr = [];
     const suj = "O(A) autor(a)", per = (a, b) => a === b ? a : a + " a " + b;
     if (f && (f.moradia || f.provedor || f.pessoas)) {
-      let s = suj + (f.moradia ? " reside " + f.moradia : "");
+      const oc = !cc && R.ocupacao(R.profissaoDeclarada(o.qualificacao));   // ficha + qualificação: "O autor, que trabalha como …,"
+      let s = suj + (oc && !oc.status ? ", que " + oc.frase.replace("autônoma", "autônomo(a)") + "," : "") + (f.moradia ? " reside " + f.moradia : "");
       const sep = f.moradia ? " e " : " ";
       if (f.pessoas === 1) s += sep + "vive sozinho(a)" + (f.provedor ? ", sendo o(a) único(a) responsável pelo próprio sustento" : "");
       else if (f.provedor) s += sep + "é o(a) único(a) provedor(a) " + (f.pessoas ? "de um lar com " + f.pessoas + " pessoas" : "do seu lar");
@@ -457,11 +484,10 @@
       .filter(Boolean).join(" + ");
     const bruto = o.cc ? o.cc.bruto : renda ? renda.media : ficha && ficha.renda ? (ficha.renda.v2 || ficha.renda.v1) : null;
     if (!ficha && !o.cc && !renda) {
-      let t = R.textoSocioDeclaracao(R.profissaoDeclarada(o.qualificacao));
-      if (g) t += ". " + R.montarSocio({ gastos: g });
-      return { texto: t, fonte: "declaração de hipossuficiência (sem comprovante de renda legível)" + (g ? " + gastos do extrato" : ""), generico: true, gastos: g };
+      return { texto: R.textoSocioPerfil(o.qualificacao, g), gastos: g, generico: true,
+        fonte: "qualificação do cliente, sem comprovante de renda legível" + (g ? " + gastos do extrato" : "") };
     }
-    let texto = R.montarSocio({ ficha, cc: o.cc, renda, gastos: g });
+    let texto = R.montarSocio({ ficha, cc: o.cc, renda, gastos: g, qualificacao: o.qualificacao });
     if (ficha && ficha.sexo) texto = R.generoTexto(texto, ficha.sexo);
     const docV = o.cc ? o.cc.bruto : renda ? renda.media : null, fr = ficha && ficha.renda;   // documento vale mais que a ficha
     const conflito = fr && docV != null && docV > (fr.v2 || fr.v1) ? "A ficha informa renda " + (fr.tipo === "ate" ? "de até" : "de") + " R$ " + R.fmt(fr.v2 || fr.v1) +

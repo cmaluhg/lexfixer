@@ -637,7 +637,7 @@
     } else h += "<br><b>Comprovante de renda:</b> <span class='hint'>formato não reconhecido (ou ausente).</span>";
     if (socio.gastos) h += "<br><b>Gastos no extrato</b> (" + esc(socio.gastos.de + (socio.gastos.nMeses > 1 ? " a " + socio.gastos.ate + ", média/mês" : "")) + "): " +
       socio.gastos.itens.map(i => esc(i.cat) + " R$ " + LEXRJ.fmt(i.media)).join(" · ") + " <span class='hint'>— confira no extrato antes do protocolo</span>";
-    h += "<br><b>Texto socioeconômico:</b> " + esc(socio.fonte) + (socio.generico ? " <span style='color:#922'>— texto com base só na declaração; complete com a realidade do cliente se tiver o dado</span>" : "");
+    h += "<br><b>Texto socioeconômico:</b> " + esc(socio.fonte) + (socio.generico ? " <span style='color:#922'>— sem renda comprovada: cole a ficha do comercial no campo abaixo para completar com a realidade do cliente</span>" : "");
     if (arqs.peticao) h += "<br><b>Peça automática do LexPRE:</b> ✅ " + esc(arqs.peticao.name) + " <span class='hint'>— use o botão “Corrigir peça automática”</span>";
     if (avisos.length) h += "<div class='warn-box' style='background:#fdecea;border:1px solid #f5b7b1;color:#7b1a13;margin-top:12px'>⚠️ Não consegui ler: " + esc(avisos.join(" · ")) + "</div>";
     $("#dados").innerHTML = h;
@@ -760,7 +760,7 @@
       if (tr.length) av.push("Rubricas com o nome completo: " + tr.map(c => esc(c) + " → " + esc(r.trocas[c])).join(" · "));
       if (r.desconhecidas.length) av.push("<b>Código sem nome cadastrado:</b> " + r.desconhecidas.map(esc).join(", ") + " — saiu sem o sublinhado; confira o nome do desconto no extrato.");
       if (r.sobra.length) av.push("<b>Campos ainda não preenchidos:</b> " + esc(r.sobra.join(" ")) + " — completar no Word antes do protocolo.");
-      if (rj.socio.generico) av.push("Texto socioeconômico feito só com a declaração de hipossuficiência: complete com renda e realidade do cliente se tiver o documento.");
+      if (rj.socio.generico) av.push("Texto socioeconômico sem renda comprovada (só qualificação e extrato): cole a ficha do comercial no campo para completar com moradia, renda e gastos.");
       h += av.map(a => "<div class='warn-box'>" + a + "</div>").join("");
       $("#rjSaida").innerHTML = h;
     } catch (e) { $("#rjSaida").innerHTML = "<div class='warn-box' style='background:#fdecea;border-color:#e74c3c;color:#922'>⚠️ Falha ao corrigir a peça: " + esc((e && e.message) || e) + "</div>"; }

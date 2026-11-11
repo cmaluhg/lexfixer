@@ -145,8 +145,12 @@ const re = R.lerRendaExtrato("Data Histórico 03/09/2025 CREDITO DE SALARIO SECR
 assert.deepStrictEqual([re.tipo, re.meses.map(m => m.val), re.media], ["salário", [6045.49, 2000, 1000], 3015.16]);
 assert.strictEqual(R.montarSocio({ renda: re }), "A renda do(a) autor(a) vem de créditos de salário que, segundo os extratos bancários anexos, somam em média R$ 3.015,16 por mês (09/2025 a 11/2025)");
 assert.strictEqual(R.lerRendaExtrato("29/06/2026 PIX TRANSF VANESSA 30,00 29/06/2026 DEP DIN ATM 690,00"), null);
-const sd = R.socioDoCliente({ qualificacao: "FULANO, BRASILEIRO(A), CASADO(A), DESEMPREGADO, RG nº 1" });
-assert.ok(sd.generico && /^A parte autora, que se qualifica como desempregado, declarou, na declaração de hipossuficiência anexa/.test(sd.texto));
+// sem ficha nem comprovante: a vida do cliente pela qualificação (estado civil, ocupação, cidade), sem "declarou, na declaração…"
+const sd = R.socioDoCliente({ qualificacao: "FULANO, BRASILEIRO(A), CASADO(A), DESEMPREGADO, RG nº 1, residente em Rua A, 2, CEP: 26540-390, NILÓPOLIS-RJ" });
+assert.ok(sd.generico);
+assert.strictEqual(sd.texto, "A parte autora, casada, está desempregada e reside em Nilópolis/RJ. Mesmo sem emprego, precisa arcar com as despesas de moradia, alimentação, transporte e contas de água e luz");
+assert.ok(R.socioDoCliente({ qualificacao: "HAGATA, Brasileiro(a), Solteiro(a), OPERADORA DE CAIXA, portador(a) do RG" }).texto
+  .startsWith("A parte autora, solteira, trabalha como operadora de caixa. Com o que recebe, arca com as despesas de moradia"));
 assert.ok(R.socioDoCliente({}).texto.length > 50, "sem nenhum dado o texto não fica vazio");
 assert.strictEqual(R.socioDoCliente({ socioDocx: " Texto do comercial ", cc }).texto, "Texto do comercial");
 
@@ -164,7 +168,7 @@ assert.strictEqual(sg.texto, "A renda do(a) autor(a) vem de créditos de salári
   "Os extratos bancários anexos registram, em média por mês, R$ 300,00 com educação, R$ 30,00 com saúde e farmácia, R$ 200,00 com supermercado e alimentação e " +
   "R$ 50,00 com contas de água, luz e gás (06/2026 a 08/2026)");
 assert.ok(R.socioDoCliente({ lanc: lancG.slice(0, 3), qualificacao: "A, B, C, DO LAR, RG" }).texto
-  .endsWith("família. Os extratos bancários anexos registram, em média por mês, R$ 300,00 com educação (06/2026 a 07/2026)"));
+  .endsWith("água e luz, e os extratos bancários anexos registram, em média por mês, R$ 300,00 com educação (06/2026 a 07/2026)"));
 assert.strictEqual(R.gastosExtrato([Lc("01/01/2026", "TARIFA BANCARIA", "", 10)]), null);
 
 // ficha socioeconômica do comercial → texto corrido (gênero pela ficha), com renda e gastos na mesma frase
